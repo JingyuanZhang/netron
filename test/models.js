@@ -6,10 +6,11 @@
 const fs = require('fs');
 const path = require('path');
 const process = require('process');
-const child_process = require('child_process');
 const http = require('http');
 const https = require('https');
-const json = require('../source/json');
+const util = require('util');
+
+// const json = require('../source/json');
 const protobuf = require('../source/protobuf');
 const flatbuffers = require('../source/flatbuffers');
 const sidebar = require('../source/view-sidebar.js');
@@ -18,26 +19,25 @@ const zip = require('../source/zip');
 const gzip = require('../source/gzip');
 const tar = require('../source/tar');
 const base = require('../source/base');
-const xmldom = require('xmldom');
 
 global.Int64 = base.Int64;
 global.Uint64 = base.Uint64;
-global.json = json;
+
+// global.json = json;
 global.protobuf = protobuf;
 global.flatbuffers = flatbuffers;
-global.DOMParser = xmldom.DOMParser;
+
 global.TextDecoder = class {
 
     constructor(encoding) {
-        global.TextDecoder._TextDecoder = global.TextDecoder._TextDecoder || require('util').TextDecoder;
         if (encoding !== 'ascii') {
-            this._textDecoder = new global.TextDecoder._TextDecoder(encoding);
+            this._decoder = new util.TextDecoder(encoding);
         }
     }
 
     decode(data) {
-        if (this._textDecoder) {
-            return this._textDecoder.decode(data);
+        if (this._decoder) {
+            return this._decoder.decode(data);
         }
 
         if (data.length < 32) {
@@ -105,8 +105,13 @@ class TestHost {
         if (!fs.existsSync(pathname)) {
             return Promise.reject(new Error("The file '" + file + "' does not exist."));
         }
-        const buffer = fs.readFileSync(pathname, encoding);
-        return Promise.resolve(encoding ? buffer : new TestBinaryStream(buffer));
+        if (encoding) {
+            const content = fs.readFileSync(pathname, encoding);
+            return Promise.resolve(content);
+        }
+        const buffer = fs.readFileSync(pathname, null);
+        const stream = new TestBinaryStream(buffer);
+        return Promise.resolve(stream);
     }
 
     event(/* category, action, label, value */) {
@@ -154,10 +159,16 @@ class TestBinaryStream {
 
     seek(position) {
         this._position = position >= 0 ? position : this._length + position;
+        if (this._position > this._buffer.length) {
+            throw new Error('Expected ' + (this._position - this._buffer.length) + ' more bytes. The file might be corrupted. Unexpected end of file.');
+        }
     }
 
     skip(offset) {
         this._position += offset;
+        if (this._position > this._buffer.length) {
+            throw new Error('Expected ' + (this._position - this._buffer.length) + ' more bytes. The file might be corrupted. Unexpected end of file.');
+        }
     }
 
     peek(length) {
@@ -190,11 +201,12 @@ class TestBinaryStream {
 
 class TestContext {
 
-    constructor(host, folder, identifier, stream) {
+    constructor(host, folder, identifier, stream, entries) {
         this._host = host;
         this._folder = folder;
         this._identifier = identifier;
         this._stream = stream;
+        this._entries = entries;
     }
 
     get identifier() {
@@ -203,6 +215,10 @@ class TestContext {
 
     get stream() {
         return this._stream;
+    }
+
+    get entries() {
+        return this._entries;
     }
 
     request(file, encoding, base) {
@@ -283,10 +299,6 @@ class HTMLElement {
         return this._attributes.get(name);
     }
 
-    getBBox() {
-        return { x: 0, y: 0, width: 10, height: 10 };
-    }
-
     getElementsByClassName(name) {
         const elements = [];
         for (const node of this._childNodes) {
@@ -309,6 +321,20 @@ class HTMLElement {
 
     get classList() {
         return new DOMTokenList(this);
+    }
+
+    getBBox() {
+        return { x: 0, y: 0, width: 10, height: 10 };
+    }
+
+    getBoundingClientRect() {
+        return { left: 0, top: 0, wigth: 0, height: 0 };
+    }
+
+    scrollTo() {
+    }
+
+    focus() {
     }
 }
 
@@ -335,74 +361,60 @@ class DOMTokenList {
     }
 }
 
-function makeDir(dir) {
+const makeDir = (dir) => {
     if (!fs.existsSync(dir)){
         fs.mkdirSync(dir, { recursive: true });
     }
-}
+};
 
-function decompress(buffer, identifier) {
+const clearLine = () => {
+    if (process.stdout.clearLine) {
+        process.stdout.clearLine();
+    }
+};
+
+const decompress = (buffer) => {
     let archive = null;
-    const extension = identifier.split('.').pop().toLowerCase();
-    if (extension == 'gz' || extension == 'tgz') {
+    if (buffer.length >= 18 && buffer[0] === 0x1f && buffer[1] === 0x8b) {
         archive = gzip.Archive.open(buffer);
-        if (archive.entries.length == 1) {
-            const entry = archive.entries[0];
-            if (entry.name) {
-                identifier = entry.name;
-            }
-            else {
-                identifier = identifier.substring(0, identifier.lastIndexOf('.'));
-                if (extension == 'tgz') {
-                    identifier += '.tar';
-                }
-            }
-            buffer = entry.data;
+        if (archive.entries.size == 1) {
+            const stream = archive.entries.values().next().value;
+            buffer = stream.peek();
         }
     }
-
-    switch (identifier.split('.').pop().toLowerCase()) {
-        case 'tar':
-            archive = tar.Archive.open(buffer);
+    const formats = [ zip, tar ];
+    for (const module of formats) {
+        archive = module.Archive.open(buffer);
+        if (archive) {
             break;
-        case 'zip':
-            archive = zip.Archive.open(buffer);
-            break;
+        }
     }
     return archive;
-}
+};
 
-function request(location, cookie) {
+const request = (location, cookie) => {
     const options = { rejectUnauthorized: false };
-    let httpRequest = null;
     const url = new URL(location);
-    const protocol = url.protocol;
-    switch (protocol) {
-        case 'http:':
-            httpRequest = http.request(location, options);
-            break;
-        case 'https:':
-            httpRequest = https.request(location, options);
-            break;
-    }
+    const protocol = url.protocol === 'https:' ? https : http;
+    const request = protocol.request(location, options);
     return new Promise((resolve, reject) => {
-        if (!httpRequest) {
+        if (!request) {
             reject(new Error("Unknown HTTP request."));
         }
         if (cookie && cookie.length > 0) {
-            httpRequest.setHeader('Cookie', cookie);
+            request.setHeader('Cookie', cookie);
         }
-        httpRequest.on('response', (response) => {
+        request.on('response', (response) => {
             resolve(response);
         });
-        httpRequest.on('error', (error) => {
+        request.on('error', (error) => {
             reject(error);
         });
-        httpRequest.end();
+        request.end();
     });
-}
+};
 
-function downloadFile(location, cookie) {
+const downloadFile = (location, cookie) => {
     return request(location, cookie).then((response) => {
         const url = new URL(location);
         if (response.statusCode == 200 &&
@@ -449,9 +461,9 @@ function downloadFile(location, cookie) {
             });
         });
     });
-}
+};
 
-function download(folder, targets, sources) {
+const download = (folder, targets, sources) => {
     if (targets.every((file) => fs.existsSync(folder + '/' + file))) {
         return Promise.resolve();
     }
@@ -486,78 +498,81 @@ function download(folder, targets, sources) {
     }
     return downloadFile(source).then((data) => {
         if (sourceFiles.length > 0) {
-            if (process.stdout.clearLine) {
-                process.stdout.clearLine();
-            }
+            clearLine();
             process.stdout.write('  decompress...\r');
             const archive = decompress(data, source.split('?').shift().split('/').pop());
-            for (const file of sourceFiles) {
-                if (process.stdout.clearLine) {
-                    process.stdout.clearLine();
+            clearLine();
+            for (const name of sourceFiles) {
+                process.stdout.write('  write ' + name + '\r');
+                if (name !== '.') {
+                    const stream = archive.entries.get(name);
+                    if (!stream) {
+                        throw new Error("Entry not found '" + name + '. Archive contains entries: ' + JSON.stringify(Array.from(archive.entries.keys())) + " .");
+                    }
+                    const target = targets.shift();
+                    const buffer = stream.peek();
+                    const file = path.join(folder, target);
+                    fs.writeFileSync(file, buffer, null);
                 }
-                process.stdout.write('  write ' + file + '\n');
-                const entry = archive.entries.filter((entry) => entry.name == file)[0];
-                if (!entry) {
-                    throw new Error("Entry not found '" + file + '. Archive contains entries: ' + JSON.stringify(archive.entries.map((entry) => entry.name)) + " .");
+                else {
+                    const target = targets.shift();
+                    const dir = path.join(folder, target);
+                    if (!fs.existsSync(dir)) {
+                        fs.mkdirSync(dir);
+                    }
                 }
-                const target = targets.shift();
-                fs.writeFileSync(folder + '/' + target, entry.data, null);
+                clearLine();
             }
         }
         else {
             const target = targets.shift();
-            if (process.stdout.clearLine) {
-                process.stdout.clearLine();
-            }
+            clearLine();
             process.stdout.write('  write ' + target + '\r');
             fs.writeFileSync(folder + '/' + target, data, null);
         }
-        if (process.stdout.clearLine) {
-            process.stdout.clearLine();
-        }
+        clearLine();
         if (sources.length > 0) {
             return download(folder, targets, sources);
         }
         return;
     });
-}
+};
 
-function script(folder, targets, command, args) {
-    if (targets.every((file) => fs.existsSync(folder + '/' + file))) {
-        return Promise.resolve();
-    }
-    return new Promise((resolve, reject) => {
-        try {
-            const comspec = process.env.COMSPEC;
-            if (process.platform === 'win32' && process.env.SHELL) {
-                process.env.COMSPEC = process.env.SHELL;
-                command = '/' + command.split(':').join('').split('\\').join('/');
-            }
-            child_process.execSync(command + ' ' + args, { stdio: [ 0, 1 , 2] });
-            process.env.COMSPEC = comspec;
-            resolve();
-        }
-        catch (error) {
-            reject(error);
-        }
-    });
-}
-
-function loadModel(target, item) {
+const loadModel = (target, item) => {
     const host = new TestHost();
     const exceptions = [];
     host.on('exception', (_, data) => {
         exceptions.push(data.exception);
     });
-    const folder = path.dirname(target);
     const identifier = path.basename(target);
-    const size = fs.statSync(target).size;
-    const buffer = new Uint8Array(size);
-    const fd = fs.openSync(target, 'r');
-    fs.readSync(fd, buffer, 0, size, 0);
-    fs.closeSync(fd);
-    const reader = new TestBinaryStream(buffer);
-    const context = new TestContext(host, folder, identifier, reader);
+    const stat = fs.statSync(target);
+    let context = null;
+    if (stat.isFile()) {
+        const buffer = fs.readFileSync(target, null);
+        const reader = new TestBinaryStream(buffer);
+        const dirname = path.dirname(target);
+        context = new TestContext(host, dirname, identifier, reader);
+    }
+    else if (stat.isDirectory()) {
+        const entries = new Map();
+        const walk = (dir) => {
+            for (const item of fs.readdirSync(dir)) {
+                const pathname = path.join(dir, item);
+                const stat = fs.statSync(pathname);
+                if (stat.isDirectory()) {
+                    walk(pathname);
+                }
+                else if (stat.isFile()) {
+                    const buffer = fs.readFileSync(pathname, null);
+                    const stream = new TestBinaryStream(buffer);
+                    const name = pathname.split(path.sep).join(path.posix.sep);
+                    entries.set(name, stream);
+                }
+            }
+        };
+        walk(target);
+        context = new TestContext(host, target, identifier, null, entries);
+    }
     const modelFactoryService = new view.ModelFactoryService(host);
     let opened = false;
     return modelFactoryService.open(context).then((model) => {
@@ -632,17 +647,13 @@ function loadModel(target, item) {
             for (const node of graph.nodes) {
                 node.type.toString();
                 node.type.length;
-                if (typeof node.type != 'string') {
+                if (!node.type || typeof node.type.name != 'string') {
                     throw new Error("Invalid node type '" + JSON.stringify(node.type) + "'.");
                 }
+                sidebar.DocumentationSidebar.formatDocumentation(node.type);
                 node.name.toString();
                 node.name.length;
                 node.description;
-                const metadata = node.metadata;
-                if (metadata !== null && metadata !== undefined && (typeof metadata !== 'object' || !metadata.name)) {
-                    throw new Error("Invalid metadata object '" + node.type + "'.");
-                }
-                sidebar.DocumentationSidebar.formatDocumentation(node.metadata);
                 node.attributes.slice();
                 for (const attribute of node.attributes) {
                     attribute.name.toString();
@@ -694,9 +705,12 @@ function loadModel(target, item) {
         }
         return model;
     });
-}
+};
 
-function render(model) {
+const renderModel = (model, item) => {
+    if (item.actions.has('skip-render')) {
+        return Promise.resolve();
+    }
     try {
         const host = new TestHost();
         const currentView = new view.View(host);
@@ -711,9 +725,9 @@ function render(model) {
     catch (error) {
         return Promise.reject(error);
     }
-}
+};
 
-function next() {
+const next = () => {
     if (items.length == 0) {
         return;
     }
@@ -731,36 +745,17 @@ function next() {
         return;
     }
     process.stdout.write(item.type + '/' + target + '\n');
-    if (item.action && item.action.split(';').some((action) => action == 'skip')) {
+    item.actions = new Set((item.action || '').split(';'));
+    if (item.actions.has('skip')) {
         next();
         return;
     }
-    if (process.stdout.clearLine) {
-        process.stdout.clearLine();
-    }
+    clearLine();
 
-    let promise = null;
-    if (item.script) {
-        const index = item.script.search(' ');
-        const root = path.dirname(__dirname);
-        const command = path.resolve(root, item.script.substring(0, index));
-        const args = item.script.substring(index + 1);
-        promise = script(folder, targets, command, args);
-    }
-    else {
-        const sources = item.source;
-        promise = download(folder, targets, sources);
-    }
-    return promise.then(() => {
+    const sources = item.source;
+    return download(folder, targets, sources).then(() => {
         return loadModel(folder + '/' + target, item).then((model) => {
-            let promise = null;
-            if (item.action && item.action.split(';').some((action) => action == 'skip-render')) {
-                promise = Promise.resolve();
-            }
-            else {
-                promise = render(model);
-            }
-            return promise.then(() => {
+            return renderModel(model, item).then(() => {
                 if (item.error) {
                     console.error('Expected error.');
                 }
@@ -777,6 +772,6 @@ function next() {
             return next();
         }
     });
-}
+};
 
 next();

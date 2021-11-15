@@ -1,21 +1,70 @@
 /* jshint esversion: 6 */
 
 var json = json || {};
-var base = base || require('./base');
+var text = text || require('./text');
 
 json.TextReader = class {
 
-    constructor(buffer) {
-        this._buffer = buffer;
+    static open(data) {
+        const decoder = text.Decoder.open(data);
+        let state = 'start';
+        for (let i = 0; i < 0x1000; i++) {
+            const c = decoder.decode();
+            if (c === undefined || c === '\0') {
+                if (i === 0) {
+                    return null;
+                }
+                break;
+            }
+            if (c <= ' ') {
+                if (c !== ' ' && c !== '\n' && c !== '\r' && c !== '\t') {
+                    return null;
+                }
+                continue;
+            }
+            switch (state) {
+                case 'start':
+                    if (c === '#') {
+                        state = 'comment';
+                        break;
+                    }
+                    if (c === '[') {
+                        state = 'list';
+                        break;
+                    }
+                    if (c === '{') {
+                        state = 'object';
+                        break;
+                    }
+                    if (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z') {
+                        state = '';
+                        break;
+                    }
+                    return null;
+                case 'list':
+                    if (c === '"' || c === '-' || c === '+' || c === '{' || c === '[' || (c >= '0' && c <= '9')) {
+                        state = '';
+                        break;
+                    }
+                    return null;
+                case 'object':
+                    if (c != '"') {
+                        return null;
+                    }
+                    state = '';
+                    continue;
+            }
+        }
+        return new json.TextReader(data);
+    }
+
+    constructor(data) {
+        this._data = data;
         this._escape = { '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' };
     }
 
-    static create(buffer) {
-        return new json.TextReader(buffer);
-    }
-
     read() {
-        const decoder = base.TextDecoder.create(this._buffer);
+        const decoder = text.Decoder.open(this._data);
         const stack = [];
         this._decoder = decoder;
         this._position = 0;
@@ -338,7 +387,7 @@ json.TextReader = class {
         this._decoder.position = 0;
         let c;
         do {
-            if (this._decoder.position === this.position) {
+            if (this._decoder.position === this._position) {
                 return ' at ' + line.toString() + ':' + column.toString() + '.';
             }
             c = this._decoder.decode();
@@ -357,12 +406,13 @@ json.TextReader = class {
 
 json.BinaryReader = class {
 
-    constructor(buffer) {
-        this._buffer = buffer;
+    static open(data) {
+        const buffer = data instanceof Uint8Array ? data : data.peek();
+        return new json.BinaryReader(buffer);
     }
 
-    static create(buffer) {
-        return new json.BinaryReader(buffer);
+    constructor(buffer) {
+        this._buffer = buffer;
     }
 
     read() {

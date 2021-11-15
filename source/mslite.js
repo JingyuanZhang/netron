@@ -9,18 +9,18 @@ mslite.ModelFactory = class {
         const stream = context.stream;
         if (stream.length >= 8) {
             const buffer = stream.peek(8);
-            const reader = new flatbuffers.Reader(buffer);
+            const reader = flatbuffers.BinaryReader.open(buffer);
             if (reader.identifier === '' || reader.identifier === 'MSL1' || reader.identifier === 'MSL2') {
-                return true;
+                return 'mslite';
             }
         }
-        return false;
+        return '';
     }
 
     open(context) {
         return context.require('./mslite-schema').then(() => {
-            const buffer = context.stream.peek();
-            const reader = new flatbuffers.Reader(buffer);
+            const stream = context.stream;
+            const reader = flatbuffers.BinaryReader.open(stream);
             switch (reader.identifier) {
                 case '':
                     throw new mslite.Error('MSL0 format is deprecated.', false);
@@ -58,12 +58,12 @@ mslite.Model = class {
         }
         const subgraphs = model.subGraph;
         if (Array.isArray(subgraphs)) {
-            this._graphs.push(new mslite.Graph(metadata, model, model));
-        }
-        else {
             for (const subgraph of subgraphs) {
                 this._graphs.push(new mslite.Graph(metadata, subgraph, model));
             }
+        }
+        else {
+            this._graphs.push(new mslite.Graph(metadata, model, model));
         }
     }
 
@@ -147,25 +147,23 @@ mslite.Graph = class {
 mslite.Node = class {
 
     constructor(metadata, op, args) {
-        this._metadata = metadata;
         this._name = op.name || '';
-        this._type = '?';
+        this._type = { name: '?' };
         this._attributes = [];
         this._inputs = [];
         this._outputs = [];
 
-        let schema = null;
         const data = op.primitive.value;
         if (data && data.constructor) {
-            this._type = data.constructor.name;
-            schema = metadata.type(this._type);
-            this._attributes = Object.keys(data).map((key) => new mslite.Attribute(metadata.attribute(this.type, key), key.toString(), data[key]));
+            const type = data.constructor.name;
+            this._type = metadata.type(type);
+            this._attributes = Object.keys(data).map((key) => new mslite.Attribute(metadata.attribute(type, key), key.toString(), data[key]));
         }
 
         const input_num = op.inputIndex.length;
         let i = 0;
-        if (schema && schema.inputs){
-            for (const input of schema.inputs) {
+        if (this._type && this._type.inputs){
+            for (const input of this._type.inputs) {
                 if (i >= input_num) {
                     break;
                 }
@@ -181,8 +179,8 @@ mslite.Node = class {
 
         const output_num = op.outputIndex.length;
         i = 0;
-        if (schema && schema.outputs){
-            for (const output of schema.outputs) {
+        if (this._type && this._type.outputs){
+            for (const output of this._type.outputs) {
                 if (i >= output_num) {
                     break;
                 }
@@ -205,10 +203,6 @@ mslite.Node = class {
         return this._type;
     }
 
-    get metadata() {
-        return this._metadata.type(this.type);
-    }
-
     get inputs() {
         return this._inputs;
     }
@@ -227,9 +221,8 @@ mslite.Attribute = class {
     constructor(schema, attrName, value) {
         this._type = null;
         this._name = attrName;
-        this._visible = true;
+        this._visible = false;
         this._value = ArrayBuffer.isView(value) ? Array.from(value) : value;
-
         if (schema) {
             if (schema.type) {
                 this._type = schema.type;

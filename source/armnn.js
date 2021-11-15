@@ -8,44 +8,48 @@ armnn.ModelFactory = class {
     match(context) {
         switch (context.identifier.split('.').pop().toLowerCase()) {
             case 'armnn': {
-                return true;
+                return 'armnn.flatbuffers';
             }
             case 'json': {
                 const obj = context.open('json');
                 if (obj && obj.layers && obj.inputIds && obj.outputIds) {
-                    return true;
+                    return 'armnn.flatbuffers.json';
                 }
             }
         }
-        return false;
+        return undefined;
     }
 
-    open(context) {
+    open(context, match) {
         return context.require('./armnn-schema').then((/* schema */) => {
             armnn.schema = flatbuffers.get('armnn').armnnSerializer;
             let model = null;
-            try {
-                const identifier = context.identifier;
-                const extension = identifier.split('.').pop().toLowerCase();
-                switch (extension) {
-                    case 'armnn': {
-                        const reader = new flatbuffers.Reader(context.stream.peek());
+            switch (match) {
+                case 'armnn.flatbuffers': {
+                    try {
+                        const stream = context.stream;
+                        const reader = flatbuffers.BinaryReader.open(stream);
                         model = armnn.schema.SerializedGraph.create(reader);
-                        break;
                     }
-                    case 'json': {
+                    catch (error) {
+                        const message = error && error.message ? error.message : error.toString();
+                        throw new armnn.Error('File format is not armnn.SerializedGraph (' + message.replace(/\.$/, '') + ').');
+                    }
+                    break;
+                }
+                case 'armnn.flatbuffers.json': {
+                    try {
                         const obj = context.open('json');
-                        const reader = new flatbuffers.TextReader(obj);
+                        const reader = flatbuffers.TextReader.open(obj);
                         model = armnn.schema.SerializedGraph.createText(reader);
-                        break;
                     }
+                    catch (error) {
+                        const message = error && error.message ? error.message : error.toString();
+                        throw new armnn.Error('File text format is not armnn.SerializedGraph (' + message.replace(/\.$/, '') + ').');
+                    }
+                    break;
                 }
             }
-            catch (error) {
-                const message = error && error.message ? error.message : error.toString();
-                throw new armnn.Error('File format is not armnn.SerializedGraph (' + message.replace(/\.$/, '') + ').');
-            }
-
             return armnn.Metadata.open(context).then((metadata) => {
                 return new armnn.Model(metadata, model);
             });
@@ -81,45 +85,68 @@ armnn.Graph = class {
         this._inputs = [];
         this._outputs = [];
 
-        // generate parameters
-        const args = {};
-        for (let i = 0; i < graph.layers.length; i++) {
-            const base = armnn.Node.getBase(graph.layers[i]);
-            for (let j = 0 ; j < base.outputSlots.length ; j++) {
-                const key = base.index.toString() + ':' + j.toString();
-                args[key] = new armnn.Argument(key, base.outputSlots[j].tensorInfo, null);
+        const counts = new Map();
+        for (const layer of graph.layers) {
+            const base = armnn.Node.getBase(layer);
+            for (const slot of base.inputSlots) {
+                const name = slot.connection.sourceLayerIndex.toString() + ':' + slot.connection.outputSlotIndex.toString();
+                counts.set(name, counts.has(name) ? counts.get(name) + 1 : 1);
             }
         }
-        for (let i = 0; i < graph.layers.length; i++) {
-            const layer = graph.layers[i];
-            const type = layer.layer.constructor.name;
-            switch (type) {
-                case 'InputLayer': {
-                    const base = armnn.Node.getBase(layer);
+        const args = new Map();
+        const arg = (layerIndex, slotIndex, tensor) => {
+            const name = layerIndex.toString() + ':' + slotIndex.toString();
+            if (!args.has(name)) {
+                const layer = graph.layers[layerIndex];
+                const base = layerIndex < graph.layers.length ? armnn.Node.getBase(layer) : null;
+                const tensorInfo = base && slotIndex < base.outputSlots.length ? base.outputSlots[slotIndex].tensorInfo : null;
+                args.set(name, new armnn.Argument(name, tensorInfo, tensor));
+            }
+            return args.get(name);
+        };
+        const layers = graph.layers.filter((layer) => {
+            const base = armnn.Node.getBase(layer);
+            if (base.layerType == armnn.schema.LayerType.Constant && base.outputSlots.length === 1 && layer.layer.input) {
+                const slot = base.outputSlots[0];
+                const name = base.index.toString() + ':' + slot.index.toString();
+                if (counts.get(name) === 1) {
+                    const tensor = new armnn.Tensor(layer.layer.input, 'Constant');
+                    arg(base.index, slot.index, tensor);
+                    return false;
+                }
+            }
+            return true;
+        });
+        for (const layer of layers) {
+            const base = armnn.Node.getBase(layer);
+            for (const slot of base.inputSlots) {
+                arg(slot.connection.sourceLayerIndex, slot.connection.outputSlotIndex);
+            }
+        }
+        for (const layer of layers) {
+            const base = armnn.Node.getBase(layer);
+            switch (base.layerType) {
+                case armnn.schema.LayerType.Input: {
                     const name = base ? base.layerName : '';
-                    for (let j = 0; j < base.outputSlots.length; j++) {
-                        const argument = args[base.index.toString() + ':' + j.toString()];
+                    for (const slot of base.outputSlots) {
+                        const argument = arg(base.index, slot.index);
                         this._inputs.push(new armnn.Parameter(name, [ argument ]));
                     }
                     break;
                 }
-                case 'OutputLayer': {
+                case armnn.schema.LayerType.Output: {
                     const base = armnn.Node.getBase(layer);
                     const name = base ? base.layerName : '';
-                    for (let i = 0; i < base.inputSlots.length; i++) {
-                        const connection = base.inputSlots[i].connection;
-                        const sourceLayerIndex = connection.sourceLayerIndex;
-                        const sourceOutputIndex = connection.outputSlotIndex;
-                        const argument = args[sourceLayerIndex.toString() + ':' + sourceOutputIndex.toString()];
+                    for (const slot of base.inputSlots) {
+                        const argument = arg(slot.connection.sourceLayerIndex, slot.connection.outputSlotIndex);
                         this._outputs.push(new armnn.Parameter(name, [ argument ]));
                     }
                     break;
                 }
                 default:
-                    this._nodes.push(new armnn.Node(metadata, layer, args));
+                    this._nodes.push(new armnn.Node(metadata, layer, arg));
                     break;
             }
-
         }
     }
 
@@ -146,16 +173,16 @@ armnn.Graph = class {
 
 armnn.Node = class {
 
-    constructor(metadata, layer, args) {
-        this._metadata = metadata;
-        this._type = layer.layer.constructor.name;
+    constructor(metadata, layer, arg) {
+        const type = layer.layer.constructor.name;
+        this._type = Object.assign({}, metadata.type(type) || { name: type });
+        this._type.name = this._type.name.replace(/Layer$/, '');
         this._name = '';
         this._outputs = [];
         this._inputs = [];
         this._attributes = [];
-        const schema = this._metadata.type(this._type);
-        const inputSchemas = (schema && schema.inputs) ? [...schema.inputs] : [ { name: 'input' } ];
-        const outputSchemas = (schema && schema.outputs) ? [...schema.outputs] : [ { name: 'output' } ];
+        const inputSchemas = (this._type && this._type.inputs) ? [...this._type.inputs] : [ { name: 'input' } ];
+        const outputSchemas = (this._type && this._type.outputs) ? [...this._type.outputs] : [ { name: 'output' } ];
         const base = armnn.Node.getBase(layer);
         if (base) {
             this._name = base.layerName;
@@ -164,7 +191,7 @@ armnn.Node = class {
                 const inputSchema = inputSchemas.length > 0 ? inputSchemas.shift() : { name: '?' };
                 const inputCount = inputSchema.list ? inputSlots.length : 1;
                 this._inputs.push(new armnn.Parameter(inputSchema.name, inputSlots.splice(0, inputCount).map((inputSlot) => {
-                    return args[inputSlot.connection.sourceLayerIndex.toString() + ':' + inputSlot.connection.outputSlotIndex.toString()];
+                    return arg(inputSlot.connection.sourceLayerIndex, inputSlot.connection.outputSlotIndex);
                 })));
             }
             const outputSlots = [...base.outputSlots];
@@ -172,53 +199,34 @@ armnn.Node = class {
                 const outputSchema = outputSchemas.length > 0 ? outputSchemas.shift() : { name: '?' };
                 const outputCount = outputSchema.list ? outputSlots.length : 1;
                 this._outputs.push(new armnn.Parameter(outputSchema.name, outputSlots.splice(0, outputCount).map((outputSlot) => {
-                    return args[base.index + ':' + outputSlot.index];
+                    return arg(base.index, outputSlot.index);
                 })));
             }
         }
-        if (schema) {
-            const _layer = armnn.Node.castLayer(layer);
-
-            if (schema.bindings) {
-                for (let i = 0 ; i < schema.bindings.length ; i++) {
-                    const binding = schema.bindings[i];
-                    const value = _layer.base()[binding.src]();
-                    this._attributes.push(new armnn.Attribute(binding.name, binding.type, value));
-                }
+        if (layer.layer && layer.layer.descriptor && this._type.attributes) {
+            for (const pair of Object.entries(layer.layer.descriptor)) {
+                const name = pair[0];
+                const value = pair[1];
+                const attribute = new armnn.Attribute(metadata.attribute(type, name), name, value);
+                this._attributes.push(attribute);
             }
-            if (schema.attributes) {
-                for (const attribute of schema.attributes) {
-                    const value = this.packAttr(_layer, attribute);
-                    this._attributes.push(new armnn.Attribute(attribute.name, attribute.type, value));
-                }
-            }
-            if (schema.inputs) {
-                for (let i = 0 ; i < schema.inputs.length ; i++) {
-                    const input = schema.inputs[i];
-                    const initializer = _layer[input.src];
-                    if (initializer) {
-                        const args = [ new armnn.Argument('', null, initializer) ];
-                        this._inputs.push(new armnn.Parameter(input.name, args));
-                    }
-                }
+        }
+        if (layer.layer) {
+            for (const entry of Object.entries(layer.layer).filter((entry) => entry[1] instanceof armnn.schema.ConstTensor)) {
+                const name = entry[0];
+                const tensor = entry[1];
+                const argument = new armnn.Argument('', tensor.info, new armnn.Tensor(tensor));
+                this._inputs.push(new armnn.Parameter(name, [ argument ]));
             }
         }
     }
 
     get type() {
-        return this._type.replace(/Layer$/, '');
+        return this._type;
     }
 
     get name() {
         return this._name;
-    }
-
-    get domain() {
-        return null;
-    }
-
-    get metadata() {
-        return this._metadata.type(this._type);
     }
 
     get group() {
@@ -237,52 +245,8 @@ armnn.Node = class {
         return this._attributes;
     }
 
-    static castLayer(layer) {
-        return layer.layer;
-    }
-
     static getBase(layer) {
-        layer = armnn.Node.castLayer(layer);
-        return layer.base.base ? layer.base.base : layer.base;
-    }
-
-    getAttr(descriptor, key) {
-        if (typeof descriptor[key] == "undefined")
-            return "undefined";
-
-        const values = descriptor[key];
-        if (Array.isArray(values)) {
-            return values.join(", ");
-        }
-        else {
-            return values;
-        }
-    }
-
-    packAttr(layer, attr) {
-        const descriptor = layer === null ? null : layer.descriptor;
-        const key = attr.src;
-        const type = attr.src_type;
-
-        if (typeof type != "undefined") {
-            const value = this.getAttr(descriptor, key);
-            if (typeof armnn.schema[type + "Name"] != "undefined") {
-                return armnn.schema[type + "Name"][value];
-            }
-            else {
-                return value;
-            }
-        }
-        else if (Array.isArray(key)) {
-            const values = [];
-            for (let i = 0 ; i < key.length ; i++) {
-                values.push(this.getAttr(descriptor, key[i]));
-            }
-            return values.join(", ");
-        }
-        else {
-            return this.getAttr(descriptor, key);
-        }
+        return layer.layer.base.base ? layer.layer.base.base : layer.layer.base;
     }
 
     static makeKey(layer_id, index) {
@@ -292,11 +256,13 @@ armnn.Node = class {
 
 armnn.Attribute = class {
 
-    constructor(name, type, value) {
+    constructor(metadata, name, value) {
         this._name = name;
+        this._type = metadata ? metadata.type : null;
         this._value = ArrayBuffer.isView(value) ? Array.from(value) : value;
-        this._visible = true;
-        this._type = type;
+        if (armnn.schema[this._type]) {
+            this._value = armnn.Utility.enum(this._type, this._value);
+        }
     }
 
     get name() {
@@ -342,14 +308,13 @@ armnn.Argument = class {
         if (typeof name !== 'string') {
             throw new armnn.Error("Invalid argument identifier '" + JSON.stringify(name) + "'.");
         }
-        const info = initializer ? initializer.info : tensorInfo;
         this._name = name;
-        this._type = new armnn.TensorType(info);
-        this._initializer = initializer ? new armnn.Tensor(info, initializer) : null;
+        this._type = new armnn.TensorType(tensorInfo);
+        this._initializer = initializer;
 
-        if (this._type.dataType.startsWith('q') && info) {
-            this._scale = info.quantizationScale;
-            this._zeroPoint = info.quantizationOffset;
+        if (this._type.dataType.startsWith('q') && tensorInfo) {
+            this._scale = tensorInfo.quantizationScale;
+            this._zeroPoint = tensorInfo.quantizationOffset;
         }
     }
 
@@ -375,15 +340,10 @@ armnn.Argument = class {
 
 armnn.Tensor = class {
 
-    constructor(tensorInfo, tensor) {
-        this._name = '';
-        this._type = new armnn.TensorType(tensorInfo);
-        this._kind = 'Initializer';
+    constructor(tensor, kind) {
+        this._type = new armnn.TensorType(tensor.info);
         this._data = tensor.data.data.slice(0);
-    }
-
-    get name() {
-        return this._name;
+        this._kind = kind ? kind : '';
     }
 
     get kind() {
@@ -568,36 +528,49 @@ armnn.Metadata = class {
     }
 
     constructor(data) {
-        this._map = new Map();
+        this._types = new Map();
+        this._attributes = new Map();
         if (data) {
             const metadata = JSON.parse(data);
-            this._map = new Map(metadata.map((item) => [ item.name, item ]));
+            this._types = new Map(metadata.map((item) => [ item.name, item ]));
         }
     }
 
     type(name) {
-        return this._map.get(name);
+        return this._types.get(name);
     }
 
     attribute(type, name) {
-        const schema = this.type(type);
-        if (schema) {
-            let attributeMap = schema.attributeMap;
-            if (!attributeMap) {
-                attributeMap = {};
-                if (schema.attributes) {
-                    for (const attribute of schema.attributes) {
-                        attributeMap[attribute.name] = attribute;
-                    }
+        const key = type + ':' + name;
+        if (!this._attributes.has(key)) {
+            this._attributes.set(key, null);
+            const metadata = this.type(type);
+            if (metadata && Array.isArray(metadata.attributes)) {
+                for (const attribute of metadata.attributes) {
+                    this._attributes.set(type + ':' + attribute.name, attribute);
                 }
-                schema.attributeMap = attributeMap;
-            }
-            const attributeSchema = attributeMap[name];
-            if (attributeSchema) {
-                return attributeSchema;
             }
         }
-        return null;
+        return this._attributes.get(key);
+    }
+};
+
+armnn.Utility = class {
+
+    static enum(name, value) {
+        const type = name && armnn.schema ? armnn.schema[name] : undefined;
+        if (type) {
+            armnn.Utility._enums = armnn.Utility._enums || new Map();
+            if (!armnn.Utility._enums.has(name)) {
+                const map = new Map(Object.keys(type).map((key) => [ type[key], key ]));
+                armnn.Utility._enums.set(name, map);
+            }
+            const map = armnn.Utility._enums.get(name);
+            if (map.has(value)) {
+                return map.get(value);
+            }
+        }
+        return value;
     }
 };
 

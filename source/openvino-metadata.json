@@ -475,7 +475,6 @@
       },
       {
         "default": 1,
-        "description": null,
         "name": "num_orient_classes",
         "required": true,
         "type": "int32"
@@ -496,7 +495,6 @@
       },
       {
         "default": 1,
-        "description": null,
         "name": "interpolate_orientation",
         "required": true,
         "type": "int32"
@@ -528,6 +526,17 @@
         "name": "operation",
         "required": true,
         "type": "string"
+      }
+    ],
+    "inputs": [
+      {
+        "name": "inputs",
+        "list": true
+      }
+    ],
+    "outputs": [
+      {
+        "name": "output"
       }
     ],
     "support_level": "default"
@@ -1306,6 +1315,10 @@
         "name": "num_axes",
         "required": true,
         "type": "int32"
+      },
+      {
+        "name": "special_zero",
+        "type": "boolean"
       }
     ],
     "support_level": "default"

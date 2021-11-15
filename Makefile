@@ -21,21 +21,24 @@ update: install
 	@./tools/armnn sync schema
 	@./tools/bigdl sync schema
 	@./tools/caffe sync schema
+	@./tools/circle sync schema metadata
 	@./tools/cntk sync schema
 	@./tools/coreml sync schema
 	@./tools/dnn schema
 	@./tools/mnn sync schema
 	@./tools/mslite sync schema metadata
 	@./tools/onnx sync install schema metadata
+	@./tools/om sync schema
 	@./tools/paddle sync schema
 	@./tools/pytorch sync install schema metadata
 	@./tools/sklearn sync install metadata
 	@./tools/tf sync install schema metadata
 	@./tools/uff schema
+	@./tools/xmodel sync schema
 
 build_python: install
 	python -m pip install --user wheel
-	python ./setup.py build --version bdist_wheel
+	python ./publish/setup.py build --version bdist_wheel
 
 install_python: build_python
 	pip install --force-reinstall --quiet dist/dist/*.whl
@@ -82,8 +85,6 @@ build_web:
 	cp -R ./source/*.json ./dist/web
 	cp -R ./source/*.ico ./dist/web
 	cp -R ./source/*.png ./dist/web
-	cp -R ./node_modules/d3/dist/d3.js ./dist/web
-	cp -R ./node_modules/dagre/dist/dagre.js ./dist/web
 	rm -rf ./dist/web/electron.* ./dist/web/app.js
 	sed -i "s/0\.0\.0/$$(grep '"version":' package.json -m1 | cut -d\" -f4)/g" ./dist/web/index.html
 
@@ -100,7 +101,7 @@ publish_cask:
 	rm -rf ./dist/homebrew-cask
 	sleep 4
 	git clone --depth=2 https://x-access-token:$(GITHUB_TOKEN)@github.com/$(GITHUB_USER)/homebrew-cask.git ./dist/homebrew-cask
-	node ./publish/cask.js ./package.json ./dist/homebrew-cask/Casks/netron.rb
+	node ./publish/cask.js ./dist/homebrew-cask/Casks/netron.rb
 	git -C ./dist/homebrew-cask add --all
 	git -C ./dist/homebrew-cask commit -m "Update $$(node -pe "require('./package.json').productName") to $$(node -pe "require('./package.json').version")"
 	git -C ./dist/homebrew-cask push
@@ -114,7 +115,7 @@ publish_winget:
 	rm -rf ./dist/winget-pkgs
 	sleep 4
 	git clone --depth=2 https://x-access-token:$(GITHUB_TOKEN)@github.com/$(GITHUB_USER)/winget-pkgs.git ./dist/winget-pkgs
-	node ./publish/winget.js ./package.json ./dist/winget-pkgs/manifests
+	node ./publish/winget.js ./dist/winget-pkgs/manifests
 	git -C ./dist/winget-pkgs add --all
 	git -C ./dist/winget-pkgs commit -m "Update $$(node -pe "require('./package.json').name") to $$(node -pe "require('./package.json').version")"
 	git -C ./dist/winget-pkgs push

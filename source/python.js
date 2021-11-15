@@ -1632,6 +1632,7 @@ python.Execution = class {
         this.registerModule('sklearn');
         this.registerModule('typing');
         this.registerModule('xgboost');
+        const builtins = this._context.scope.builtins;
         const numpy = this._context.scope.numpy;
         const typing = this._context.scope.typing;
         this.registerType('builtins.function', class {});
@@ -1641,11 +1642,13 @@ python.Execution = class {
         this.registerType('builtins.bool', class {});
         this.registerType('builtins.int', class {});
         this.registerType('builtins.float', class {});
+        this.registerType('builtins.object', class {});
         this.registerType('builtins.str', class {});
         this.registerType('builtins.tuple', class {});
         this.registerType('typing._Final', class {});
         this.registerType('typing._SpecialForm', class extends typing._Final {});
         this.registerType('typing._BaseGenericAlias', class extends typing._Final {});
+        this.registerType('typing._GenericAlias', class extends typing._BaseGenericAlias {});
         this.registerType('typing._SpecialGenericAlias', class extends typing._BaseGenericAlias {});
         this.registerType('typing._TupleType', class extends typing._SpecialGenericAlias {});
         typing.Optional = self.invoke('typing._SpecialForm', []);
@@ -1659,11 +1662,40 @@ python.Execution = class {
         });
         this.registerType('collections.deque', class {
             constructor(iterable) {
-                let i = 0;
-                for (const value of iterable) {
-                    this[i++] = value;
+                if (iterable) {
+                    let i = 0;
+                    for (const value of iterable) {
+                        this[i++] = value;
+                    }
+                    this.length = i;
                 }
-                this.length = i;
+            }
+        });
+        this.registerType('collections.OrderedDict', class extends Map {
+            constructor(items) {
+                super();
+                if (items) {
+                    for (const pair of items) {
+                        this.__setitem__(pair[0], pair[1]);
+                    }
+                }
+            }
+            __setitem__(key, value) {
+                this.set(key, value);
+            }
+        });
+        this.registerType('cuml.common.array_descriptor.CumlArrayDescriptorMeta', class {});
+        this.registerType('cuml.ensemble.randomforestclassifier.RandomForestClassifier', class {});
+        this.registerType('cuml.raft.common.handle.Handle', class {
+            __setstate__(state) {
+                this._handle = state;
+            }
+        });
+        this.registerType('haiku._src.data_structures.FlatMapping', class {
+            constructor(dict) {
+                for (const key of Object.keys(dict)) {
+                    this[key] = dict[key];
+                }
             }
         });
         this.registerType('numpy.core._multiarray_umath.scalar', class {
@@ -1694,9 +1726,6 @@ python.Execution = class {
                 }
                 throw new python.Error("Unknown scalar type '" + dtype.name + "'.");
             }
-        });
-        this.registerFunction('numpy.core.multiarray._reconstruct', function(subtype, shape, dtype) {
-            return self.invoke(subtype, [ shape, dtype ]);
         });
         this.registerType('numpy.dtype', class {
             constructor(obj, align, copy) {
@@ -1782,6 +1811,7 @@ python.Execution = class {
         this.registerType('gensim.models.fasttext.FastTextKeyedVectors', class {});
         this.registerType('gensim.models.keyedvectors.Doc2VecKeyedVectors', class {});
         this.registerType('gensim.models.keyedvectors.FastTextKeyedVectors', class {});
+        this.registerType('gensim.models.keyedvectors.KeyedVectors', class {});
         this.registerType('gensim.models.keyedvectors.Vocab', class {});
         this.registerType('gensim.models.keyedvectors.Word2VecKeyedVectors', class {});
         this.registerType('gensim.models.phrases.Phrases', class {});
@@ -1805,7 +1835,7 @@ python.Execution = class {
                     return unpickler.load((name, args) => self.invoke(name, args), null);
                 }
                 else {
-                    const size = this.dtype.itemsize * this.shape.reduce((a, b) => a * b);
+                    const size = this.dtype.itemsize * this.shape.reduce((a, b) => a * b, 1);
                     this.data = unpickler.read(size);
                 }
                 return self.invoke(this.subclass, [ this.shape, this.dtype, this.data ]);
@@ -1813,7 +1843,131 @@ python.Execution = class {
         });
         this.registerType('lightgbm.sklearn.LGBMRegressor', class {});
         this.registerType('lightgbm.sklearn.LGBMClassifier', class {});
-        this.registerType('lightgbm.basic.Booster', class {});
+        this.registerType('lightgbm.basic.Booster', class {
+            constructor() {
+                this.average_output = false;
+                this.models = [];
+                this.loaded_parameter = '';
+            }
+            __setstate__(state) {
+                if (typeof state.handle === 'string') {
+                    this.LoadModelFromString(state.handle);
+                    return;
+                }
+                Object.assign(this, state);
+            }
+            LoadModelFromString(model_str) {
+                const lines = model_str.split('\n');
+                const signature = lines.shift() || '?';
+                if (signature.trim() !== 'tree') {
+                    throw new python.Error("Invalid signature '" + signature.trim() + "'.");
+                }
+                // GBDT::LoadModelFromString() in https://github.com/microsoft/LightGBM/blob/master/src/boosting/gbdt_model_text.cpp
+                const key_vals = new Map();
+                while (lines.length > 0 && !lines[0].startsWith('Tree=')) {
+                    const cur_line = lines.shift().trim();
+                    if (cur_line.length > 0) {
+                        const strs = cur_line.split('=');
+                        if (strs.length === 1) {
+                            key_vals.set(strs[0], '');
+                        }
+                        else if (strs.length === 2) {
+                            key_vals.set(strs[0], strs[1]);
+                        }
+                        else if (strs.length > 2) {
+                            if (strs[0] === "feature_names") {
+                                key_vals.set(strs[0], cur_line.substring("feature_names=".length));
+                            }
+                            else if (strs[0] == 'monotone_constraints') {
+                                key_vals.set(strs[0], cur_line.substring('monotone_constraints='.length));
+                            }
+                            else {
+                                throw new python.Error('Wrong line: ' + cur_line.substring(0, Math.min(128, cur_line.length)));
+                            }
+                        }
+                    }
+                }
+                const atoi = (key, value) => {
+                    if (key_vals.has(key)) {
+                        return parseInt(key_vals.get(key), 10);
+                    }
+                    if (value !== undefined) {
+                        return value;
+                    }
+                    throw new python.Error('Model file does not specify ' + key + '.');
+                };
+                const list = (key, size) => {
+                    if (key_vals.has(key)) {
+                        const value = key_vals.get(key).split(' ');
+                        if (value.length !== size) {
+                            throw new python.Error('Wrong size of ' + key + '.');
+                        }
+                        return value;
+                    }
+                    throw new python.Error('Model file does not contain ' + key + '.');
+                };
+                this.version = key_vals.get('version') || '';
+                this.num_class = atoi('num_class');
+                this.num_tree_per_iteration = atoi('num_tree_per_iteration', this.num_class);
+                this.label_index = atoi('label_index');
+                this.max_feature_idx = atoi('max_feature_idx');
+                if (key_vals.has('average_output')) {
+                    this.average_output = true;
+                }
+                this.feature_names = list('feature_names', this.max_feature_idx + 1);
+                this.feature_infos = list('feature_infos', this.max_feature_idx + 1);
+                if (key_vals.has('monotone_constraints')) {
+                    this.monotone_constraints = list('monotone_constraints', this.max_feature_idx + 1, true);
+                }
+                if (key_vals.has('objective')) {
+                    this.objective = key_vals.get('objective');
+                }
+                let tree = null;
+                // let lineNumber = 0;
+                while (lines.length > 0) {
+                    // lineNumber++;
+                    const text = lines.shift();
+                    const line = text.trim();
+                    if (line.length === 0) {
+                        continue;
+                    }
+                    if (line.startsWith('Tree=')) {
+                        tree = { index: parseInt(line.split('=').pop(), 10) };
+                        this.models.push(tree);
+                        continue;
+                    }
+                    if (line === 'end of trees') {
+                        break;
+                    }
+                    const param = line.split('=');
+                    if (param.length !== 2) {
+                        throw new python.Error("Invalid property '" + line + "'.");
+                    }
+                    const name = param[0].trim();
+                    const value = param[1].trim();
+                    tree[name] = value;
+                }
+                const ss = [];
+                let is_inparameter = false;
+                while (lines.length > 0) {
+                    const text = lines.shift();
+                    const line = text.trim();
+                    if (line === 'parameters:') {
+                        is_inparameter = true;
+                        continue;
+                    }
+                    else if (line === 'end of parameters') {
+                        break;
+                    }
+                    else if (is_inparameter) {
+                        ss.push(line);
+                    }
+                }
+                if (ss.length > 0) {
+                    this.loaded_parameter = ss.join('\n');
+                }
+            }
+        });
         this.registerType('nolearn.lasagne.base.BatchIterator', class {});
         this.registerType('nolearn.lasagne.base.Layers', class {});
         this.registerType('nolearn.lasagne.base.NeuralNet', class {});
@@ -1837,7 +1991,7 @@ python.Execution = class {
                 this.data = state[4];
             }
             __read__(unpickler) {
-                const dims = this.shape && this.shape.length > 0 ? this.shape.reduce((a, b) => a * b) : 1;
+                const dims = (this.shape || []).reduce((a, b) => a * b, 1);
                 const size = this.dtype.itemsize * dims;
                 if (typeof this.data == 'string') {
                     this.data = unpickler.unescape(this.data, size);
@@ -1878,6 +2032,7 @@ python.Execution = class {
         this.registerType('sklearn.discriminant_analysis.LinearDiscriminantAnalysis', class {});
         this.registerType('sklearn.discriminant_analysis.QuadraticDiscriminantAnalysis', class {});
         this.registerType('sklearn.dummy.DummyClassifier', class {});
+        this.registerType('sklearn.dummy.DummyRegressor', class {});
         this.registerType('sklearn.externals.joblib.numpy_pickle.NumpyArrayWrapper', class {
             constructor(/* subtype, shape, dtype */) {
             }
@@ -1893,7 +2048,7 @@ python.Execution = class {
                     return unpickler.load((name, args) => self.invoke(name, args), null);
                 }
                 else {
-                    const size = this.dtype.itemsize * this.shape.reduce((a, b) => a * b);
+                    const size = this.dtype.itemsize * this.shape.reduce((a, b) => a * b, 1);
                     this.data = unpickler.read(size);
                 }
                 return self.invoke(this.subclass, [ this.shape, this.dtype, this.data ]);
@@ -1910,6 +2065,7 @@ python.Execution = class {
         this.registerType('sklearn.ensemble._gb.GradientBoostingClassifier', class {});
         this.registerType('sklearn.ensemble._gb.GradientBoostingRegressor', class {});
         this.registerType('sklearn.ensemble._iforest.IsolationForest', class {});
+        this.registerType('sklearn.ensemble._stacking.StackingClassifier', class {});
         this.registerType('sklearn.ensemble._voting.VotingClassifier', class {});
         this.registerType('sklearn.ensemble.forest.RandomForestClassifier', class {});
         this.registerType('sklearn.ensemble.forest.RandomForestRegressor', class {});
@@ -1942,10 +2098,12 @@ python.Execution = class {
         this.registerType('sklearn.isotonic.IsotonicRegression', class {});
         this.registerType('sklearn.linear_model._base.LinearRegression', class {});
         this.registerType('sklearn.linear_model._bayes.BayesianRidge', class {});
+        this.registerType('sklearn.linear_model._coordinate_descent.ElasticNetCV', class {});
         this.registerType('sklearn.linear_model._coordinate_descent.ElasticNet', class {});
         this.registerType('sklearn.linear_model._logistic.LogisticRegression', class {});
         this.registerType('sklearn.linear_model._ridge.Ridge', class {});
         this.registerType('sklearn.linear_model._sgd_fast.Hinge', class {});
+        this.registerType('sklearn.linear_model._sgd_fast.Log', class {});
         this.registerType('sklearn.linear_model._sgd_fast.ModifiedHuber', class {});
         this.registerType('sklearn.linear_model._sgd_fast.SquaredHinge', class {});
         this.registerType('sklearn.linear_model._stochastic_gradient.SGDClassifier', class {});
@@ -1960,10 +2118,12 @@ python.Execution = class {
         this.registerType('sklearn.linear_model.stochastic_gradient.SGDClassifier', class {});
         this.registerType('sklearn.metrics._scorer._PredictScorer', class {});
         this.registerType('sklearn.metrics.scorer._PredictScorer', class {});
+        this.registerType('sklearn.mixture._bayesian_mixture.BayesianGaussianMixture', class {});
         this.registerType('sklearn.model_selection._search.GridSearchCV', class {});
         this.registerType('sklearn.model_selection._search.RandomizedSearchCV', class {});
         this.registerType('sklearn.model_selection._split.KFold', class {});
         this.registerType('sklearn.multiclass.OneVsRestClassifier', class {});
+        this.registerType('sklearn.multioutput.MultiOutputClassifier', class {});
         this.registerType('sklearn.multioutput.MultiOutputRegressor', class {});
         this.registerType('sklearn.naive_bayes.BernoulliNB', class {});
         this.registerType('sklearn.naive_bayes.ComplementNB', class {});
@@ -2016,9 +2176,11 @@ python.Execution = class {
         this.registerType('sklearn.preprocessing.label.LabelBinarizer', class {});
         this.registerType('sklearn.preprocessing.label.LabelEncoder', class {});
         this.registerType('sklearn.preprocessing.label.MultiLabelBinarizer', class {});
+        this.registerType('sklearn.svm._classes.LinearSVC', class {});
         this.registerType('sklearn.svm._classes.SVC', class {});
         this.registerType('sklearn.svm._classes.SVR', class {});
         this.registerType('sklearn.svm.classes.LinearSVC', class {});
+        this.registerType('sklearn.svm.classes.OneClassSVM', class {});
         this.registerType('sklearn.svm.classes.SVC', class {});
         this.registerType('sklearn.svm.classes.SVR', class {});
         this.registerType('sklearn.tree._classes.DecisionTreeClassifier', class {});
@@ -2048,12 +2210,12 @@ python.Execution = class {
         });
         this.registerType('spacy._ml.PrecomputableAffine', class {
             __setstate__(state) {
-                Object.assign(this, new python.Unpickler(state).load((name, args) => self.invoke(name, args), null));
+                Object.assign(this, python.Unpickler.open(state).load((name, args) => self.invoke(name, args), null));
             }
         });
         this.registerType('spacy.syntax._parser_model.ParserModel', class {
             __setstate__(state) {
-                Object.assign(this, new python.Unpickler(state).load((name, args) => self.invoke(name, args), null));
+                Object.assign(this, python.Unpickler.open(state).load((name, args) => self.invoke(name, args), null));
             }
         });
         this.registerType('thinc.describe.Biases', class {
@@ -2083,52 +2245,52 @@ python.Execution = class {
         });
         this.registerType('thinc.neural._classes.affine.Affine', class {
             __setstate__(state) {
-                Object.assign(this, new python.Unpickler(state).load((name, args) => self.invoke(name, args), null));
+                Object.assign(this, python.Unpickler.open(state).load((name, args) => self.invoke(name, args), null));
             }
         });
         this.registerType('thinc.neural._classes.convolution.ExtractWindow', class {
             __setstate__(state) {
-                Object.assign(this, new python.Unpickler(state).load((name, args) => self.invoke(name, args), null));
+                Object.assign(this, python.Unpickler.open(state).load((name, args) => self.invoke(name, args), null));
             }
         });
         this.registerType('thinc.neural._classes.feature_extracter.FeatureExtracter', class {
             __setstate__(state) {
-                Object.assign(this, new python.Unpickler(state).load((name, args) => self.invoke(name, args), null));
+                Object.assign(this, python.Unpickler.open(state).load((name, args) => self.invoke(name, args), null));
             }
         });
         this.registerType('thinc.neural._classes.feed_forward.FeedForward', class {
             __setstate__(state) {
-                Object.assign(this, new python.Unpickler(state).load((name, args) => self.invoke(name, args), null));
+                Object.assign(this, python.Unpickler.open(state).load((name, args) => self.invoke(name, args), null));
             }
         });
         this.registerType('thinc.neural._classes.function_layer.FunctionLayer', class {
             __setstate__(state) {
-                Object.assign(this, new python.Unpickler(state).load((name, args) => self.invoke(name, args), null));
+                Object.assign(this, python.Unpickler.open(state).load((name, args) => self.invoke(name, args), null));
             }
         });
         this.registerType('thinc.neural._classes.hash_embed.HashEmbed', class {
             __setstate__(state) {
-                Object.assign(this, new python.Unpickler(state).load((name, args) => self.invoke(name, args), null));
+                Object.assign(this, python.Unpickler.open(state).load((name, args) => self.invoke(name, args), null));
             }
         });
         this.registerType('thinc.neural._classes.layernorm.LayerNorm', class {
             __setstate__(state) {
-                Object.assign(this, new python.Unpickler(state).load((name, args) => self.invoke(name, args), null));
+                Object.assign(this, python.Unpickler.open(state).load((name, args) => self.invoke(name, args), null));
             }
         });
         this.registerType('thinc.neural._classes.maxout.Maxout', class {
             __setstate__(state) {
-                Object.assign(this, new python.Unpickler(state).load((name, args) => self.invoke(name, args), null));
+                Object.assign(this, python.Unpickler.open(state).load((name, args) => self.invoke(name, args), null));
             }
         });
         this.registerType('thinc.neural._classes.resnet.Residual', class {
             __setstate__(state) {
-                Object.assign(this, new python.Unpickler(state).load((name, args) => self.invoke(name, args), null));
+                Object.assign(this, python.Unpickler.open(state).load((name, args) => self.invoke(name, args), null));
             }
         });
         this.registerType('thinc.neural._classes.softmax.Softmax', class {
             __setstate__(state) {
-                Object.assign(this, new python.Unpickler(state).load((name, args) => self.invoke(name, args), null));
+                Object.assign(this, python.Unpickler.open(state).load((name, args) => self.invoke(name, args), null));
             }
         });
         this.registerType('thinc.neural.mem.Memory', class {
@@ -2143,6 +2305,7 @@ python.Execution = class {
             constructor(/* args */) {
             }
         });
+        this.registerType('types.ObjectType', builtins.object);
         this.registerType('xgboost.compat.XGBoostLabelEncoder', class {});
         this.registerType('xgboost.core.Booster', class {});
         this.registerType('xgboost.sklearn.XGBClassifier', class {});
@@ -2215,34 +2378,20 @@ python.Execution = class {
         this.registerFunction('collections.Counter', function(/* iterable */) {
             return { __module__: 'collections', __name__: 'Counter' };
         });
-        this.registerFunction('collections.OrderedDict', function(args) {
-            const obj = new Map();
-            obj.__setitem__ = function(key, value) {
-                obj.set(key, value);
-            };
-            if (args) {
-                for (const arg of args) {
-                    obj.__setitem__(arg[0], arg[1]);
-                }
-            }
-            return obj;
-        });
         this.registerFunction('collections.defaultdict', function(/* default_factory */) {
             return {};
         });
         this.registerFunction('copy_reg._reconstructor', function(cls, base, state) {
             // copyreg._reconstructor in Python 3
-            switch (base) {
-                case '__builtin__.object': {
-                    return self.invoke(cls, []);
+            if (base === '__builtin__.object' || base === builtins.object) {
+                return self.invoke(cls, []);
+            }
+            else if (base === '__builtin__.tuple' || base === builtins.tuple) {
+                const obj = self.invoke(cls, []);
+                for (let i = 0; i < state.length; i++) {
+                    obj[i] = state[i];
                 }
-                case '__builtin__.tuple': {
-                    const obj = self.invoke(cls, []);
-                    for (let i = 0; i < state.length; i++) {
-                        obj[i] = state[i];
-                    }
-                    return obj;
-                }
+                return obj;
             }
             throw new python.Error("Unknown copy_reg._reconstructor base type '" + base + "'.");
         });
@@ -2265,14 +2414,33 @@ python.Execution = class {
             }
             return undefined;
         });
+        this.registerFunction('dill._dill._import_module', function(import_name, safe) {
+            try {
+                return self.context.getx(import_name);
+            }
+            catch (err) {
+                if (safe) {
+                    return null;
+                }
+            }
+        });
+        this.registerFunction('dill.dill._load_type', function(name) {
+            return self.context.getx('types.' + name);
+        });
         this.registerFunction('dill._dill._load_type', function(name) {
-            return self.conext.getx('types.' + name);
+            return self.context.getx('types.' + name);
         });
         this.registerFunction('getattr', function(obj, name, defaultValue) {
             if (Object.prototype.hasOwnProperty.call(obj, name)) {
                 return obj[name];
             }
             return defaultValue;
+        });
+        this.registerFunction('numpy.core._multiarray_umath._reconstruct', function(subtype, shape, dtype) {
+            return self.invoke(subtype, [ shape, dtype ]);
+        });
+        this.registerFunction('numpy.core.multiarray._reconstruct', function(subtype, shape, dtype) {
+            return self.invoke(subtype, [ shape, dtype ]);
         });
         this.registerFunction('numpy.core.multiarray.scalar', function(dtype, rawData) {
             let data = rawData;
@@ -2323,13 +2491,6 @@ python.Execution = class {
             return function() {
                 return self.invoke('types.' + name, arguments);
             };
-        });
-        this.registerType('cuml.common.array_descriptor.CumlArrayDescriptorMeta', class {});
-        this.registerType('cuml.ensemble.randomforestclassifier.RandomForestClassifier', class {});
-        this.registerType('cuml.raft.common.handle.Handle', class {
-            __setstate__(state) {
-                this._handle = state;
-            }
         });
     }
 
@@ -2400,7 +2561,7 @@ python.Execution = class {
     }
 
     invoke(name, args) {
-        const target = this.type(name);
+        const target = name.__class__ ? name : this.type(name);
         if (target) {
             if (target.__class__ === this._context.scope.builtins.type) {
                 if (target.prototype && target.prototype.__class__ === target) {
@@ -2408,7 +2569,6 @@ python.Execution = class {
                 }
                 const obj = {};
                 obj.__proto__ = target;
-                obj.__class__ = target;
                 if (obj.__init__ && typeof obj.__init__ === 'function') {
                     obj.__init__.apply(obj, args);
                 }
@@ -2645,7 +2805,13 @@ python.Execution = class {
                 }
                 else if (target.type === 'tuple') {
                     const value = this.expression(expression.expression, context);
-                    if  (target.value.length == value.length && target.value.every((item) => item.type === 'id')) {
+                    if  (target.value.every((item) => item.type === 'id')) {
+                        if (target.value.length < value.length) {
+                            throw new python.Error('ValueError: too many values to unpack (expected ' + target.value.length + ', actual ' + value.length + ').');
+                        }
+                        if (target.value.length > value.length) {
+                            throw new python.Error('ValueError: not enough values to unpack (expected ' + target.value.length + ', actual ' + value.length + ').');
+                        }
                         for (let i = 0; i < value.length; i++) {
                             context.set(target.value[i].value, value[i]);
                         }
@@ -2696,9 +2862,6 @@ python.Execution = class {
                 throw new python.Error("Unsupported field expression.");
             }
             case 'call': {
-                if (expression.target.type === 'id' && expression.target.value === 'annotate' && expression.arguments.length === 2) {
-                    return this.expression(expression.arguments[1], context);
-                }
                 if (expression.target.type === 'id' && expression.target.value === 'unchecked_cast' && expression.arguments.length === 2) {
                     return this.expression(expression.arguments[1], context);
                 }
@@ -2714,18 +2877,29 @@ python.Execution = class {
                     case 'True': return true;
                     case 'False': return false;
                 }
-                const type =
-                    this._context.scope.builtins[expression.value] ||
-                    this._context.scope.typing[expression.value] ||
-                    this._context.scope.torch[expression.value];
-                if (type &&
-                    (type.__class__ === this._context.scope.builtins.type ||
-                     type.__class__ === this._context.scope.typing._TupleType ||
-                     type.__class__ === this._context.scope.typing._SpecialGenericAlias ||
-                     type.__class__ === this._context.scope.typing._SpecialForm)) {
-                    return type;
+                const type = (value) => {
+                    return value &&
+                        (value.__class__ === this._context.scope.builtins.type ||
+                         value.__class__ === this._context.scope.typing._TupleType ||
+                         value.__class__ === this._context.scope.typing._SpecialGenericAlias ||
+                         value.__class__ === this._context.scope.typing._SpecialForm);
+                };
+                const builtin = this._context.scope.builtins[expression.value];
+                if (type(builtin)) {
+                    return builtin;
                 }
-                return context.get(expression.value);
+                const value = context.get(expression.value);
+                if (value === undefined) {
+                    const typing = this._context.scope.typing[expression.value];
+                    if (type(typing)) {
+                        return typing;
+                    }
+                    const torch = this._context.scope.torch[expression.value];
+                    if (type(torch)) {
+                        return torch;
+                    }
+                }
+                return value;
             }
             case 'tuple': {
                 return expression.value.map((expression) => this.expression(expression, context));
@@ -2803,7 +2977,13 @@ python.Execution = class {
     }
 
     registerModule(name) {
-        this._context.scope[name] = { __name__: name, __class__: this._context.scope.builtins.module };
+        let scope = this._context.scope;
+        const items = name.split('.');
+        while (items.length > 0) {
+            const item = items.shift();
+            scope[item] = { __name__: name, __class__: this._context.scope.builtins.module };
+            scope = scope[item];
+        }
     }
 
     _raiseUnkownName(name) {
@@ -2906,8 +3086,25 @@ python.Utility = class {
 
 python.Unpickler = class {
 
-    constructor(buffer) {
-        this._reader = buffer instanceof Uint8Array ? new python.Unpickler.BinaryReader(buffer) : new python.Unpickler.StreamReader(buffer);
+    static open(data) {
+        const reader = data instanceof Uint8Array ? new python.Unpickler.BinaryReader(data) : new python.Unpickler.StreamReader(data);
+        if (reader.length > 2) {
+            const head = reader.peek(2);
+            if (head[0] === 0x80 && head[1] < 7) {
+                return new python.Unpickler(reader);
+            }
+            reader.seek(-1);
+            const tail = reader.peek(1);
+            reader.seek(0);
+            if (tail[0] === 0x2e) {
+                return new python.Unpickler(reader);
+            }
+        }
+        return null;
+    }
+
+    constructor(reader) {
+        this._reader = reader;
     }
 
     load(function_call, persistent_load) {
@@ -2978,6 +3175,15 @@ python.Unpickler = class {
                 case OpCode.BINGET:
                     stack.push(memo.get(reader.byte()));
                     break;
+                case OpCode.INST: {
+                    const module = reader.line();
+                    const name = reader.line();
+                    const type = module + '.' + name;
+                    const items = stack;
+                    stack = marker.pop();
+                    stack.push(function_call(type, items));
+                    break;
+                }
                 case OpCode.LONG_BINGET:
                     stack.push(memo.get(reader.uint32()));
                     break;
@@ -3043,6 +3249,12 @@ python.Unpickler = class {
                     for (let i = 0; i < items.length; i++) {
                         obj.push(items[i]);
                     }
+                    break;
+                }
+                case OpCode.FROZENSET: {
+                    const items = stack;
+                    stack = marker.pop();
+                    stack.push(items);
                     break;
                 }
                 case OpCode.DICT: {
@@ -3217,7 +3429,7 @@ python.Unpickler = class {
                 case OpCode.STOP:
                     return stack.pop();
                 default:
-                    throw new python.Error("Unknown opcode '" + opcode + "'.");
+                    throw new python.Error('Unknown opcode ' + opcode + ' at position ' + (reader.position - 1).toString() + '.');
             }
         }
         throw new python.Error('Unexpected end of file.');
@@ -3346,7 +3558,7 @@ python.Unpickler.OpCode = {
     PERSID: 80,            // 'P'
     BINPERSID: 81,         // 'Q'
     REDUCE: 82,            // 'R'
-    STRING: 83,             // 'S'
+    STRING: 83,            // 'S'
     BINSTRING: 84,         // 'T'
     SHORT_BINSTRING: 85,   // 'U'
     UNICODE: 86,           // 'V'
@@ -3359,6 +3571,7 @@ python.Unpickler.OpCode = {
     APPENDS: 101,          // 'e'
     GET: 103,              // 'g'
     BINGET: 104,           // 'h'
+    INST: 105,             // 'i'
     LONG_BINGET: 106,      // 'j'
     LIST: 108,             // 'l'
     OBJ: 111,              // 'o'
@@ -3399,7 +3612,7 @@ python.Unpickler.BinaryReader = class {
         this._buffer = buffer;
         this._length = buffer.length;
         this._position = 0;
-        this._dataView = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+        this._view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
         this._utf8Decoder = new TextDecoder('utf-8');
         this._asciiDecoder = new TextDecoder('ascii');
     }
@@ -3410,6 +3623,13 @@ python.Unpickler.BinaryReader = class {
 
     get length() {
         return this._length;
+    }
+
+    seek(position) {
+        this._position = position >= 0 ? position : this._length + position;
+        if (this._position > this._buffer.length) {
+            throw new Error('Expected ' + (this._position - this._buffer.length) + ' more bytes. The file might be corrupted. Unexpected end of file.');
+        }
     }
 
     skip(offset) {
@@ -3449,43 +3669,43 @@ python.Unpickler.BinaryReader = class {
     byte() {
         const position = this._position;
         this.skip(1);
-        return this._dataView.getUint8(position);
+        return this._view.getUint8(position);
     }
 
     uint16() {
         const position = this._position;
         this.skip(2);
-        return this._dataView.getUint16(position, true);
+        return this._view.getUint16(position, true);
     }
 
     int32() {
         const position = this._position;
         this.skip(4);
-        return this._dataView.getInt32(position, true);
+        return this._view.getInt32(position, true);
     }
 
     uint32() {
         const position = this._position;
         this.skip(4);
-        return this._dataView.getUint32(position, true);
+        return this._view.getUint32(position, true);
     }
 
     int64() {
         const position = this._position;
         this.skip(8);
-        return this._dataView.getInt64(position, true).toNumber();
+        return this._view.getInt64(position, true).toNumber();
     }
 
     float32() {
         const position = this._position;
         this.skip(4);
-        return this._dataView.getFloat32(position, true);
+        return this._view.getFloat32(position, true);
     }
 
     float64() {
         const position = this._position;
         this.skip(8);
-        return this._dataView.getFloat64(position, true);
+        return this._view.getFloat64(position, true);
     }
 
     string(size, encoding) {
@@ -3525,6 +3745,11 @@ python.Unpickler.StreamReader = class {
         return this._length;
     }
 
+    seek(position) {
+        this._stream.seek(position);
+        this._position = this._stream.position;
+    }
+
     skip(offset) {
         this._position += offset;
         if (this._position > this._length) {
@@ -3538,6 +3763,11 @@ python.Unpickler.StreamReader = class {
         return this._stream.stream(length);
     }
 
+    peek(length) {
+        this._stream.seek(this._position);
+        return this._stream.peek(length);
+    }
+
     read(length) {
         this._stream.seek(this._position);
         this.skip(length);
@@ -3546,37 +3776,37 @@ python.Unpickler.StreamReader = class {
 
     byte() {
         const position = this._fill(1);
-        return this._dataView.getUint8(position);
+        return this._view.getUint8(position);
     }
 
     uint16() {
         const position = this._fill(2);
-        return this._dataView.getUint16(position, true);
+        return this._view.getUint16(position, true);
     }
 
     int32() {
         const position = this._fill(4);
-        return this._dataView.getInt32(position, true);
+        return this._view.getInt32(position, true);
     }
 
     uint32() {
         const position = this._fill(4);
-        return this._dataView.getUint32(position, true);
+        return this._view.getUint32(position, true);
     }
 
     int64() {
         const position = this._fill(8);
-        return this._dataView.getInt64(position, true).toNumber();
+        return this._view.getInt64(position, true).toNumber();
     }
 
     float32() {
         const position = this._fill(4);
-        return this._dataView.getFloat32(position, true);
+        return this._view.getFloat32(position, true);
     }
 
     float64() {
         const position = this._fill(8);
-        return this._dataView.getFloat64(position, true);
+        return this._view.getFloat64(position, true);
     }
 
     string(size, encoding) {
@@ -3587,11 +3817,19 @@ python.Unpickler.StreamReader = class {
     }
 
     line() {
-        const index = this._buffer.indexOf(0x0A, this._position);
+        let position = this._fill(0);
+        let index = this._buffer.indexOf(0x0A, position);
         if (index == -1) {
-            throw new python.Error("Could not find end of line.");
+            const size = Math.min(0x1000000, this._stream.length - this._position);
+            this._fill(size);
+            this.skip(-size);
+            position = this._fill(0);
+            index = this._buffer.indexOf(0x0A, position);
+            if (index == -1) {
+                throw new python.Error("Could not find end of line.");
+            }
         }
-        const size = index - this._position;
+        const size = index - position;
         const text = this.string(size, 'ascii');
         this.skip(1);
         return text;
@@ -3605,7 +3843,7 @@ python.Unpickler.StreamReader = class {
             this._offset = this._position;
             this._stream.seek(this._offset);
             this._buffer = this._stream.read(Math.min(0x10000000, this._length - this._offset));
-            this._dataView = new DataView(this._buffer.buffer, this._buffer.byteOffset, this._buffer.byteLength);
+            this._view = new DataView(this._buffer.buffer, this._buffer.byteOffset, this._buffer.byteLength);
         }
         const position = this._position;
         this._position += length;

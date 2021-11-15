@@ -289,7 +289,7 @@
   },
   {
     "name": "Gather",
-    "category": "Data",
+    "category": "Transform",
     "attributes": [
       { "name": "axis", "type": "int32", "default": 0 },
       { "name": "indices_num", "type": "int32", "default": 0 }
@@ -479,7 +479,7 @@
   },
   {
     "name": "Pad",
-    "category": "Layer",
+    "category": "Tensor",
     "attributes": [
       { "name": "pad_n_0", "type": "int32", "default": -1 },
       { "name": "pad_n_1", "type": "int32", "default": -1 },

@@ -15,7 +15,7 @@ class Application {
         this._views = new ViewCollection();
         this._configuration = new ConfigurationService();
         this._menu = new MenuService();
-        this._openFileQueue = [];
+        this._openQueue = [];
 
         electron.app.setAppUserModelId('com.lutzroeder.netron');
         electron.app.allowRendererProcessReuse = true;
@@ -48,8 +48,8 @@ class Application {
             event.returnValue = {
                 version: electron.app.getVersion(),
                 package: electron.app.isPackaged,
-                zoom: 'd3'
-                // zoom: 'scroll'
+                zoom: 'scroll'
+                // zoom: 'drag'
             };
         });
         electron.ipcMain.on('get-configuration', (event, obj) => {
@@ -58,9 +58,15 @@ class Application {
         electron.ipcMain.on('set-configuration', (event, obj) => {
             this._configuration.set(obj.name, obj.value);
         });
-        electron.ipcMain.on('drop-files', (event, data) => {
-            const files = data.files.filter((file) => fs.statSync(file).isFile());
-            this._dropFiles(event.sender, files);
+        electron.ipcMain.on('drop-paths', (event, data) => {
+            const paths = data.paths.filter((path) => {
+                if (fs.existsSync(path)) {
+                    const stat = fs.statSync(path);
+                    return stat.isFile() || stat.isDirectory();
+                }
+                return false;
+            });
+            this._dropPaths(event.sender, paths);
         });
         electron.ipcMain.on('show-message-box', (event, options) => {
             const owner = event.sender.getOwnerBrowserWindow();
@@ -73,7 +79,7 @@ class Application {
 
         electron.app.on('will-finish-launching', () => {
             electron.app.on('open-file', (event, path) => {
-                this._openFile(path);
+                this._openPath(path);
             });
         });
 
@@ -99,11 +105,14 @@ class Application {
         let open = false;
         if (argv.length > 1) {
             for (const arg of argv.slice(1)) {
-                if (!arg.startsWith('-')) {
-                    const extension = arg.split('.').pop().toLowerCase();
-                    if (extension != '' && extension != 'js' && fs.existsSync(arg) && fs.statSync(arg).isFile()) {
-                        this._openFile(arg);
-                        open = true;
+                if (!arg.startsWith('-') && arg !== path.dirname(__dirname)) {
+                    const extension = path.extname(arg).toLowerCase();
+                    if (extension != '' && extension != 'js' && fs.existsSync(arg)) {
+                        const stat = fs.statSync(arg);
+                        if (stat.isFile() || stat.isDirectory()) {
+                            this._openPath(arg);
+                            open = true;
+                        }
                     }
                 }
             }
@@ -116,12 +125,12 @@ class Application {
         if (!this._configuration.has('userId')) {
             this._configuration.set('userId', this._uuid());
         }
-        if (this._openFileQueue) {
-            const queue = this._openFileQueue;
-            this._openFileQueue = null;
+        if (this._openQueue) {
+            const queue = this._openQueue;
+            this._openQueue = null;
             while (queue.length > 0) {
                 const file = queue.shift();
-                this._openFile(file);
+                this._openPath(file);
             }
         }
         if (this._views.count == 0) {
@@ -141,8 +150,8 @@ class Application {
         require("crypto").randomFillSync(buffer);
         buffer[6] = buffer[6] & 0x0f | 0x40;
         buffer[8] = buffer[8] & 0x3f | 0x80;
-        const text = Array.from(buffer).map((value) => value < 0x10 ? '0' + value.toString(16) : value.toString(16)).join('');
-        return text.slice(0, 8) + '-' + text.slice(8, 12) + '-' + text.slice(12, 16) + '-' + text.slice(16, 20) + '-' + text.slice(20, 32);
+        const code = Array.from(buffer).map((value) => value < 0x10 ? '0' + value.toString(16) : value.toString(16)).join('');
+        return code.slice(0, 8) + '-' + code.slice(8, 12) + '-' + code.slice(12, 16) + '-' + code.slice(16, 20) + '-' + code.slice(20, 32);
     }
 
     _openFileDialog() {
@@ -152,15 +161,15 @@ class Application {
                 { name: 'All Model Files',  extensions: [
                     'onnx', 'pb',
                     'h5', 'hd5', 'hdf5', 'json', 'keras',
-                    'mlmodel',
+                    'mlmodel', 'mlpackage',
                     'caffemodel',
                     'model', 'dnn', 'cmf', 'mar', 'params',
-                    'pdmodel', 'pdparams',
+                    'pdmodel', 'pdparams', 'nb',
                     'meta',
                     'tflite', 'lite', 'tfl',
-                    'armnn', 'mnn', 'nn', 'uff', 'uff.txt', 'rknn',
-                    'ncnn', 'param', 'tnnproto', 'tmfile', 'ms',
-                    'pt', 'pth', 't7',
+                    'armnn', 'mnn', 'nn', 'uff', 'uff.txt', 'rknn', 'xmodel',
+                    'ncnn', 'param', 'tnnproto', 'tmfile', 'ms', 'om',
+                    'pt', 'pth', 'ptl', 't7',
                     'pkl', 'joblib',
                     'pbtxt', 'prototxt',
                     'cfg', 'xml',
@@ -170,35 +179,38 @@ class Application {
         const selectedFiles = electron.dialog.showOpenDialogSync(showOpenDialogOptions);
         if (selectedFiles) {
             for (const file of selectedFiles) {
-                this._openFile(file);
+                this._openPath(file);
             }
         }
     }
 
-    _openFile(file) {
-        if (this._openFileQueue) {
-            this._openFileQueue.push(file);
+    _openPath(path) {
+        if (this._openQueue) {
+            this._openQueue.push(path);
             return;
         }
-        if (file && file.length > 0 && fs.existsSync(file) && fs.statSync(file).isFile()) {
-            // find existing view for this file
-            let view = this._views.find(file);
-            // find empty welcome window
-            if (view == null) {
-                view = this._views.find(null);
+        if (path && path.length > 0 && fs.existsSync(path)) {
+            const stat = fs.statSync(path);
+            if (stat.isFile() || stat.isDirectory()) {
+                // find existing view for this file
+                let view = this._views.find(path);
+                // find empty welcome window
+                if (view == null) {
+                    view = this._views.find(null);
+                }
+                // create new window
+                if (view == null) {
+                    view = this._views.openView();
+                }
+                this._loadPath(path, view);
             }
-            // create new window
-            if (view == null) {
-                view = this._views.openView();
-            }
-            this._loadFile(file, view);
         }
     }
 
-    _loadFile(file, view) {
-        const recents = this._configuration.get('recents').filter(recent => file != recent.path);
-        view.open(file);
-        recents.unshift({ path: file });
+    _loadPath(path, view) {
+        const recents = this._configuration.get('recents').filter((recent) => path != recent.path);
+        view.open(path);
+        recents.unshift({ path: path });
         if (recents.length > 9) {
             recents.splice(9);
         }
@@ -206,15 +218,15 @@ class Application {
         this._resetMenu();
     }
 
-    _dropFiles(sender, files) {
+    _dropPaths(sender, paths) {
         let view = this._views.from(sender);
-        for (const file of files) {
+        for (const path of paths) {
             if (view) {
-                this._loadFile(file, view);
+                this._loadPath(path, view);
                 view = null;
             }
             else {
-                this._openFile(file);
+                this._openPath(path);
             }
         }
     }
@@ -263,7 +275,7 @@ class Application {
     _reload() {
         const view = this._views.activeView;
         if (view && view.path) {
-            this._loadFile(view.path, view);
+            this._loadPath(view.path, view);
         }
     }
 
@@ -308,7 +320,6 @@ class Application {
             fullscreenable: false,
             webPreferences: {
                 nodeIntegration: true,
-                contextIsolation: true,
             }
         };
         if (process.platform === 'darwin') {
@@ -374,7 +385,16 @@ class Application {
         const menuRecentsTemplate = [];
         if (this._configuration.has('recents')) {
             let recents = this._configuration.get('recents');
-            recents = recents.filter(recent => fs.existsSync(recent.path) && fs.statSync(recent.path).isFile());
+            recents = recents.filter((recent) => {
+                const path = recent.path;
+                if (fs.existsSync(path)) {
+                    const stat = fs.statSync(path);
+                    if (stat.isFile() || stat.isDirectory()) {
+                        return true;
+                    }
+                }
+                return false;
+            });
             if (recents.length > 9) {
                 recents.splice(9);
             }
@@ -382,10 +402,10 @@ class Application {
             for (let i = 0; i < recents.length; i++) {
                 const recent = recents[i];
                 menuRecentsTemplate.push({
-                    file: recent.path,
+                    path: recent.path,
                     label: Application.minimizePath(recent.path),
                     accelerator: ((process.platform === 'darwin') ? 'Cmd+' : 'Ctrl+') + (i + 1).toString(),
-                    click: (item) => { this._openFile(item.file); }
+                    click: (item) => { this._openPath(item.path); }
                 });
             }
         }
@@ -657,6 +677,7 @@ class View {
         this._ready = false;
         this._path = null;
         this._properties = new Map();
+        this._location = url.format({ protocol: 'file:', slashes: true, pathname: path.join(__dirname, 'electron.html') });
 
         const size = electron.screen.getPrimaryDisplay().workAreaSize;
         const options = {
@@ -670,8 +691,7 @@ class View {
             height: size.height > 768 ? 768 : size.height,
             webPreferences: {
                 preload: path.join(__dirname, 'electron.js'),
-                nodeIntegration: true,
-                contextIsolation: true
+                nodeIntegration: true
             }
         };
         if (this._owner.count > 0 && View._position && View._position.length == 2) {
@@ -715,8 +735,7 @@ class View {
         this._window.once('ready-to-show', () => {
             this._window.show();
         });
-        const location = url.format({ protocol: 'file:', slashes: true, pathname: path.join(__dirname, 'electron.html') });
-        this._window.loadURL(location);
+        this._window.loadURL(this._location);
     }
 
     get window() {
@@ -727,17 +746,16 @@ class View {
         return this._path;
     }
 
-    open(file) {
-        this._openPath = file;
+    open(path) {
+        this._openPath = path;
         if (this._didFinishLoad) {
-            this._window.webContents.send('open', { file: file });
+            this._window.webContents.send('open', { path: path });
         }
         else {
             this._window.webContents.on('did-finish-load', () => {
-                this._window.webContents.send('open', { file: file });
+                this._window.webContents.send('open', { path: path });
             });
-            const location = url.format({ protocol: 'file:', slashes: true, pathname: path.join(__dirname, 'electron.html') });
-            this._window.loadURL(location);
+            this._window.loadURL(this._location);
         }
     }
 

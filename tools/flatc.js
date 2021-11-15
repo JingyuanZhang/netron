@@ -18,8 +18,14 @@ flatc.Object = class {
     resolve() {
         if (!this.resolved) {
             for (const key of this.metadata.keys()) {
-                if (key !== 'force_align' && key !== 'deprecated') {
-                    throw new flatc.Error("Unsupported attribute '" + key + "'.");
+                switch (key) {
+                    case 'force_align':
+                    case 'deprecated':
+                    case 'key':
+                    case 'required':
+                        break;
+                    default:
+                        throw new flatc.Error("Unsupported attribute '" + key + "'.");
                 }
             }
             this.resolved = true;
@@ -36,6 +42,7 @@ flatc.Namespace = class extends flatc.Object {
     constructor(parent, name) {
         super(parent, name);
         this.children = new Map();
+        this.root_type = new Set();
     }
 
     resolve() {
@@ -43,13 +50,15 @@ flatc.Namespace = class extends flatc.Object {
             for (const child of this.children.values()) {
                 child.resolve();
             }
-            if (this.root_type) {
-                const type = this.find(this.root_type, flatc.Type);
-                if (!type) {
-                    throw new flatc.Error("Failed to resolve root type '" + this.root_type + "'.");
+            if (this.root_type.size > 0) {
+                for (const root_type of this.root_type) {
+                    const type = this.find(root_type, flatc.Type);
+                    if (!type) {
+                        throw new flatc.Error("Failed to resolve root type '" + root_type + "'.");
+                    }
+                    this.root.root_type.add(type);
                 }
-                this.root.root_type = type;
-                delete this.root_type;
+                this.root_type.clear();
             }
             super.resolve();
         }
@@ -381,7 +390,8 @@ flatc.Parser = class {
                 this._parseMetadata(union.metadata);
                 this._tokenizer.expect('{');
                 while (!this._tokenizer.eat('}')) {
-                    const key = this._tokenizer.identifier();
+                    const name = this._tokenizer.identifier();
+                    const key = this._tokenizer.eat(':') ? this._tokenizer.identifier() : name;
                     const value = this._tokenizer.eat('=') ? this._tokenizer.integer() : undefined;
                     union.values.set(key, value);
                     if (this._tokenizer.eat(',')) {
@@ -394,7 +404,7 @@ flatc.Parser = class {
                 throw new flatc.Error("Unsupported keyword 'rpc_service'." + this._tokenizer.location());
             }
             if (this._tokenizer.eat('id', 'root_type')) {
-                this._context.root_type = this._tokenizer.identifier();
+                this._context.root_type.add(this._tokenizer.identifier());
                 this._tokenizer.eat(';');
                 continue;
             }
@@ -600,44 +610,44 @@ flatc.Parser.Tokenizer = class {
         if (this._position >= this._text.length) {
             return { type: 'eof', value: '' };
         }
-        const text = this._text.slice(this._position);
+        const content = this._text.slice(this._position);
 
-        const boolean_constant = text.match(/^(true|false)/);
+        const boolean_constant = content.match(/^(true|false)/);
         if (boolean_constant) {
-            const text = boolean_constant[0];
-            return { type: 'boolean', token: text, value: text === 'true' };
+            const content = boolean_constant[0];
+            return { type: 'boolean', token: content, value: content === 'true' };
         }
 
-        const identifier = text.match(/^[a-zA-Z_][a-zA-Z0-9_.]*/);
+        const identifier = content.match(/^[a-zA-Z_][a-zA-Z0-9_.]*/);
         if (identifier) {
             return { type: 'id', token: identifier[0] };
         }
 
-        const string_constant = text.match(/^".*?"/) || text.match(/^'.*?'/);
+        const string_constant = content.match(/^".*?"/) || content.match(/^'.*?'/);
         if (string_constant) {
-            const text = string_constant[0];
-            return { type: 'string', token: text, value: text.substring(1, text.length - 1) };
+            const content = string_constant[0];
+            return { type: 'string', token: content, value: content.substring(1, content.length - 1) };
         }
 
-        const dec_float_constant = text.match(/^[-+]?(([.][0-9]+)|([0-9]+[.][0-9]*)|([0-9]+))([eE][-+]?[0-9]+)?/);
+        const dec_float_constant = content.match(/^[-+]?(([.][0-9]+)|([0-9]+[.][0-9]*)|([0-9]+))([eE][-+]?[0-9]+)?/);
         if (dec_float_constant) {
-            const text = dec_float_constant[0];
-            if (text.indexOf('.') !== -1 || text.indexOf('e') !== -1) {
-                return { type: 'float', token: text, value: parseFloat(text) };
+            const content = dec_float_constant[0];
+            if (content.indexOf('.') !== -1 || content.indexOf('e') !== -1) {
+                return { type: 'float', token: content, value: parseFloat(content) };
             }
         }
 
-        const hex_float_constant = text.match(/^[-+]?0[xX](([.][0-9a-fA-F]+)|([0-9a-fA-F]+[.][0-9a-fA-F]*)|([0-9a-fA-F]+))([pP][-+]?[0-9]+)/);
+        const hex_float_constant = content.match(/^[-+]?0[xX](([.][0-9a-fA-F]+)|([0-9a-fA-F]+[.][0-9a-fA-F]*)|([0-9a-fA-F]+))([pP][-+]?[0-9]+)/);
         if (hex_float_constant) {
             throw new flatc.Error('Unsupported hexadecimal constant.');
         }
 
-        const dec_integer_constant = text.match(/^[-+]?[0-9]+/);
+        const dec_integer_constant = content.match(/^[-+]?[0-9]+/);
         if (dec_integer_constant) {
-            const text = dec_integer_constant[0];
-            return { type: 'integer', token: text, value: parseInt(text, 10) };
+            const content = dec_integer_constant[0];
+            return { type: 'integer', token: content, value: parseInt(content, 10) };
         }
-        const hex_integer_constant = text.match(/^[-+]?0[xX][0-9a-fA-F]+/);
+        const hex_integer_constant = content.match(/^[-+]?0[xX][0-9a-fA-F]+/);
         if (hex_integer_constant) {
             throw new flatc.Error('Unsupported hexadecimal constant.');
         }
@@ -748,6 +758,7 @@ flatc.Root = class extends flatc.Object {
         super(null, root);
         this._namespaces = new Map();
         this._files = new Set();
+        this.root_type = new Set();
         for (const file of files) {
             this._parseFile(paths, file);
         }
@@ -798,8 +809,8 @@ flatc.Root = class extends flatc.Object {
     _parseFile(paths, file) {
         if (!this._files.has(file)) {
             this._files.add(file);
-            const text = fs.readFileSync(file, 'utf-8');
-            const parser = new flatc.Parser(text, file, this);
+            const content = fs.readFileSync(file, 'utf-8');
+            const parser = new flatc.Parser(content, file, this);
             const includes = parser.include();
             for (const include of includes) {
                 const includeFile = this._resolve(paths, file, include);
@@ -880,7 +891,7 @@ flatc.Generator = class {
         this._builder.add(typeReference + ' = class ' + type.name + ' {');
         this._builder.indent();
 
-            if (type === this._root.root_type) {
+            if (this._root.root_type.has(type)) {
 
                 const file_identifier = this._root.file_identifier;
                 if (file_identifier) {
@@ -1003,7 +1014,8 @@ flatc.Generator = class {
                                 throw new flatc.Error('Not implemented.');
                             }
                             else if (field.type instanceof flatc.Struct) {
-                                throw new flatc.Error('Not implemented.');
+                                const fieldType = '$root.' + field.type.parent.name + '.' + field.type.name;
+                                this._builder.add('$.' + field.name + ' = ' + fieldType + '.decode(reader, position + ' + field.offset + ');');
                             }
                             else {
                                 const fieldType = '$root.' + field.type.parent.name + '.' + field.type.name;
@@ -1243,9 +1255,10 @@ const main = (args) => {
     }
 
     try {
-        const content = new flatc.Generator(new flatc.Root(options.root, options.paths, options.files), options.text).content;
+        const root = new flatc.Root(options.root, options.paths, options.files);
+        const generator = new flatc.Generator(root, options.text);
         if (options.out) {
-            fs.writeFileSync(options.out, content, 'utf-8');
+            fs.writeFileSync(options.out, generator.content, 'utf-8');
         }
     }
     catch (err) {

@@ -9,9 +9,9 @@ lasagne.ModelFactory = class {
     match(context) {
         const obj = context.open('pkl');
         if (obj && obj.__class__ && obj.__class__.__module__ === 'nolearn.lasagne.base' && obj.__class__.__name__ == 'NeuralNet') {
-            return true;
+            return 'lasagne';
         }
-        return false;
+        return '';
     }
 
     open(context) {
@@ -148,8 +148,8 @@ lasagne.Node = class {
 
     constructor(metadata, layer, arg) {
         this._name = layer.name || '';
-        this._type = layer.__class__ ? layer.__class__.__module__ + '.' + layer.__class__.__name__ : '';
-        this._metadata = metadata.type(this._type);
+        const type = layer.__class__ ? layer.__class__.__module__ + '.' + layer.__class__.__name__ : '';
+        this._type = metadata.type(type) || { name: type };
         this._inputs = [];
         this._outputs = [];
         this._attributes = [];
@@ -193,10 +193,6 @@ lasagne.Node = class {
 
     get name() {
         return this._name;
-    }
-
-    get metadata() {
-        return this._metadata;
     }
 
     get inputs() {
@@ -333,7 +329,7 @@ lasagne.Tensor = class {
     }
 
     get state() {
-        return 'Not implemented.';
+        return 'Tensor data not implemented.';
     }
 
     toString() {

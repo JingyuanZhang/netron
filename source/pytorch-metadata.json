@@ -373,7 +373,10 @@
   {
     "name": "torch._convolution:",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor" },
+      { "name": "bias", "type": "Tensor", "optional": true },
       { "name": "stride", "type": "int64[]", "default": 1 },
       { "name": "padding", "type": "int64[]", "default": 0 },
       { "name": "dilation", "type": "int64[]", "default": 1 },
@@ -385,10 +388,36 @@
       { "name": "cudnn_enabled", "type": "boolean", "visible": false },
       { "name": "allow_tf32", "type": "boolean", "visible": false }
     ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch._convolution_mode:",
     "inputs": [
       { "name": "input", "type": "Tensor" },
       { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor", "optional": true }
+      { "name": "bias", "type": "Tensor", "optional": true },
+      { "name": "stride", "type": "int64[]" },
+      { "name": "padding", "type": "string" },
+      { "name": "dilation", "type": "int64[]" },
+      { "name": "groups", "type": "int64" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch._convolution_nogroup:",
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor" },
+      { "name": "bias", "type": "Tensor", "optional": true },
+      { "name": "stride", "type": "int64[]" },
+      { "name": "padding", "type": "string" },
+      { "name": "dilation", "type": "int64[]" },
+      { "name": "transposed", "type": "boolean" },
+      { "name": "output_padding", "type": "int64[]" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -397,7 +426,10 @@
   {
     "name": "torch._convolution:deprecated",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor" },
+      { "name": "bias", "type": "Tensor", "optional": true },
       { "name": "stride", "type": "int64[]", "default": 1 },
       { "name": "padding", "type": "int64[]", "default": 0 },
       { "name": "dilation", "type": "int64[]", "default": 1 },
@@ -408,64 +440,117 @@
       { "name": "deterministic", "type": "boolean", "visible": false },
       { "name": "cudnn_enabled", "type": "boolean", "visible": false }
     ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch._convolution_mode:",
+    "category": "Layer",
     "inputs": [
       { "name": "input", "type": "Tensor" },
       { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor", "optional": true }
+      { "name": "bias", "type": "Tensor", "optional": true },
+      { "name": "stride", "type": "int64[]" },
+      { "name": "padding", "type": "string" },
+      { "name": "dilation", "type": "int64[]" },
+      { "name": "groups", "type": "int64" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
     ]
   },
   {
-    "name": "torch.conv1d",
+    "name": "torch.conv1d:",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor" },
+      { "name": "bias", "type": "Tensor", "optional": true, "default": null },
       { "name": "stride", "type": "int64[]", "default": 1 },
       { "name": "padding", "type": "int64[]", "default": 0 },
       { "name": "dilation", "type": "int64[]", "default": 1 },
       { "name": "groups", "type": "int64", "default": 1 }
-    ],
-    "inputs": [
-      { "name": "input", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor", "optional": true, "default": null }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
     ]
   },
   {
-    "name": "torch.conv2d",
+    "name": "torch.conv1d:padding",
     "category": "Layer",
-    "attributes": [
-      { "name": "stride", "type": "int64[]", "default": 1 },
-      { "name": "padding", "type": "int64[]", "default": 0 },
-      { "name": "dilation", "type": "int64[]", "default": 1 },
-      { "name": "groups", "type": "int64", "default": 1 }
-    ],
     "inputs": [
       { "name": "input", "type": "Tensor" },
       { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor", "optional": true, "default": null }
+      { "name": "bias", "type": "Tensor", "optional": true, "default": null },
+      { "name": "stride", "type": "int64[]", "default": 1 },
+      { "name": "padding", "type": "string", "default": "valid" },
+      { "name": "dilation", "type": "int64[]", "default": 1 },
+      { "name": "groups", "type": "int64", "default": 1 }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
     ]
   },
   {
-    "name": "torch.conv3d",
+    "name": "torch.conv2d:",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor" },
+      { "name": "bias", "type": "Tensor", "optional": true, "default": null },
       { "name": "stride", "type": "int64[]", "default": 1 },
       { "name": "padding", "type": "int64[]", "default": 0 },
       { "name": "dilation", "type": "int64[]", "default": 1 },
       { "name": "groups", "type": "int64", "default": 1 }
     ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.conv2d:padding",
+    "category": "Layer",
     "inputs": [
       { "name": "input", "type": "Tensor" },
       { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor", "optional": true, "default": null }
+      { "name": "bias", "type": "Tensor", "optional": true, "default": null },
+      { "name": "stride", "type": "int64[]", "default": 1 },
+      { "name": "padding", "type": "string", "default": "valid" },
+      { "name": "dilation", "type": "int64[]", "default": 1 },
+      { "name": "groups", "type": "int64", "default": 1 }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.conv3d:",
+    "category": "Layer",
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor" },
+      { "name": "bias", "type": "Tensor", "optional": true, "default": null },
+      { "name": "stride", "type": "int64[]", "default": 1 },
+      { "name": "padding", "type": "int64[]", "default": 0 },
+      { "name": "dilation", "type": "int64[]", "default": 1 },
+      { "name": "groups", "type": "int64", "default": 1 }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.conv3d:padding",
+    "category": "Layer",
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor" },
+      { "name": "bias", "type": "Tensor", "optional": true, "default": null },
+      { "name": "stride", "type": "int64[]", "default": 1 },
+      { "name": "padding", "type": "string", "default": "valid" },
+      { "name": "dilation", "type": "int64[]", "default": 1 },
+      { "name": "groups", "type": "int64", "default": 1 }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -529,20 +614,31 @@
     ]
   },
   {
+    "name": "ops.torchaudio.sox_effects_apply_effects_tensor",
+    "inputs": [
+      { "name": "tensor", "type": "Tensor" },
+      { "name": "sample_rate", "type": "int64" },
+      { "name": "effects", "type": "string[][]" },
+      { "name": "channels_first", "type": "boolean", "default": true }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" },
+      { "name": "?", "type": "Tensor" }
+    ]
+  },
+  {
     "name": "ops.prepacked.conv2d_clamp_run",
     "category": "Layer",
-    "attributes": [
-      { "name": "stride_", "type": "int64[]" },
-      { "name": "padding_", "type": "int64[]" },
-      { "name": "dilation_", "type": "int64[]" },
-      { "name": "groups_", "type": "int64" },
-      { "name": "output_min_", "type": "Scalar", "optional": true },
-      { "name": "output_max_", "type": "Scalar", "optional": true }
-    ],
     "inputs": [
       { "name": "input", "type": "Tensor" },
-      { "name": "orig_weight_", "type": "Tensor" },
-      { "name": "orig_bias_", "type": "Tensor", "optional": true }
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
+      { "name": "stride", "type": "int64[]", "context": true },
+      { "name": "padding", "type": "int64[]", "context": true },
+      { "name": "dilation", "type": "int64[]", "context": true },
+      { "name": "groups", "type": "int64", "context": true },
+      { "name": "output_min", "type": "Scalar", "context": true },
+      { "name": "output_max", "type": "Scalar", "context": true }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -551,14 +647,12 @@
   {
     "name": "ops.prepacked.linear_clamp_run",
     "category": "Layer",
-    "attributes": [
-      { "name": "output_min_", "type": "Scalar", "optional": true },
-      { "name": "output_max_", "type": "Scalar", "optional": true }
-    ],
     "inputs": [
       { "name": "input", "type": "Tensor" },
-      { "name": "orig_weight_", "type": "Tensor" },
-      { "name": "orig_bias_", "type": "Tensor", "optional": true }
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
+      { "name": "output_min", "type": "Scalar", "context": true },
+      { "name": "output_max", "type": "Scalar", "context": true }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -581,14 +675,12 @@
   {
     "name": "ops.quantized.linear",
     "category": "Layer",
-    "attributes": [
-      { "name": "Y_scale_i", "type": "float32" },
-      { "name": "Y_zero_point_i", "type": "int64" }
-    ],
     "inputs": [
       { "name": "X", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" }
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
+      { "name": "Y_scale_i", "type": "float32" },
+      { "name": "Y_zero_point_i", "type": "int64" }
     ],
     "outputs": [
       { "name": "Y", "type": "Tensor" }
@@ -597,14 +689,12 @@
   {
     "name": "ops.quantized.linear_relu",
     "category": "Layer",
-    "attributes": [
-      { "name": "Y_scale_i", "type": "float32" },
-      { "name": "Y_zero_point_i", "type": "int64" }
-    ],
     "inputs": [
       { "name": "X", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" }
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
+      { "name": "Y_scale_i", "type": "float32" },
+      { "name": "Y_zero_point_i", "type": "int64" }
     ],
     "outputs": [
       { "name": "Y", "type": "Tensor" }
@@ -613,13 +703,11 @@
   {
     "name": "ops.quantized.linear_dynamic",
     "category": "Layer",
-    "attributes": [
-      { "name": "reduce_range", "type": "boolean", "default": false }
-    ],
     "inputs": [
       { "name": "X", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" }
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
+      { "name": "reduce_range", "type": "boolean", "default": false }
     ],
     "outputs": [
       { "name": "Y", "type": "Tensor" }
@@ -628,14 +716,12 @@
   {
     "name": "ops.quantized.linear_relu_dynamic",
     "category": "Layer",
-    "attributes": [
-      { "name": "Y_scale_i", "type": "float32" },
-      { "name": "Y_zero_point_i", "type": "int64" }
-    ],
     "inputs": [
       { "name": "X", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" }
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
+      { "name": "Y_scale_i", "type": "float32" },
+      { "name": "Y_zero_point_i", "type": "int64" }
     ],
     "outputs": [
       { "name": "Y", "type": "Tensor" }
@@ -651,12 +737,16 @@
     ]
   },
   {
-    "name": "ops.quantized.conv1d",
+    "name": "ops.quantized.conv1d:",
     "category": "Layer",
     "inputs": [
       { "name": "input", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
+      { "name": "stride", "type": "int64[]", "default": 1, "context": true },
+      { "name": "padding", "type": "int64[]", "default": 0, "context": true },
+      { "name": "dilation", "type": "int64[]", "default": 1, "context": true },
+      { "name": "groups", "type": "int64", "default": 1, "context": true },
       { "name": "output_scale", "type": "float32" },
       { "name": "output_zero_point", "type": "int64" }
     ],
@@ -669,8 +759,8 @@
     "category": "Layer",
     "inputs": [
       { "name": "input", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
       { "name": "stride", "type": "int64[]", "default": 1 },
       { "name": "padding", "type": "int64[]", "default": 0 },
       { "name": "dilation", "type": "int64[]", "default": 1 },
@@ -687,8 +777,12 @@
     "category": "Layer",
     "inputs": [
       { "name": "input", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
+      { "name": "stride", "type": "int64[]", "default": 1, "context": true },
+      { "name": "padding", "type": "int64[]", "default": 0, "context": true },
+      { "name": "dilation", "type": "int64[]", "default": 1, "context": true },
+      { "name": "groups", "type": "int64", "default": 1, "context": true },
       { "name": "output_scale", "type": "float32" },
       { "name": "output_zero_point", "type": "int64" }
     ],
@@ -699,18 +793,16 @@
   {
     "name": "ops.quantized.conv3d:",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
       { "name": "stride", "type": "int64[]", "default": 1 },
       { "name": "padding", "type": "int64[]", "default": 0 },
       { "name": "dilation", "type": "int64[]", "default": 1 },
       { "name": "groups", "type": "int64", "default": 1 },
       { "name": "output_scale", "type": "float32" },
       { "name": "output_zero_point", "type": "int64" }
-    ],
-    "inputs": [
-      { "name": "input", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -721,8 +813,12 @@
     "category": "Layer",
     "inputs": [
       { "name": "input", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
+      { "name": "stride", "type": "int64[]", "default": 1, "context": true },
+      { "name": "padding", "type": "int64[]", "default": 0, "context": true },
+      { "name": "dilation", "type": "int64[]", "default": 1, "context": true },
+      { "name": "groups", "type": "int64", "default": 1, "context": true },
       { "name": "output_scale", "type": "float32" },
       { "name": "output_zero_point", "type": "int64" }
     ],
@@ -731,12 +827,16 @@
     ]
   },
   {
-    "name": "ops.quantized.conv1d_relu",
+    "name": "ops.quantized.conv1d_relu:",
     "category": "Layer",
     "inputs": [
       { "name": "input", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
+      { "name": "stride", "type": "int64[]", "default": 1, "context": true },
+      { "name": "padding", "type": "int64[]", "default": 0, "context": true },
+      { "name": "dilation", "type": "int64[]", "default": 1, "context": true },
+      { "name": "groups", "type": "int64", "default": 1, "context": true },
       { "name": "output_scale", "type": "float64" },
       { "name": "output_zero_point", "type": "int64" }
     ],
@@ -749,8 +849,8 @@
     "category": "Layer",
     "inputs": [
       { "name": "input", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
       { "name": "stride", "type": "int64[]", "default": 1 },
       { "name": "padding", "type": "int64[]", "default": 0 },
       { "name": "dilation", "type": "int64[]", "default": 1 },
@@ -767,8 +867,12 @@
     "category": "Layer",
     "inputs": [
       { "name": "input", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
+      { "name": "stride", "type": "int64[]", "default": 1, "context": true },
+      { "name": "padding", "type": "int64[]", "default": 0, "context": true },
+      { "name": "dilation", "type": "int64[]", "default": 1, "context": true },
+      { "name": "groups", "type": "int64", "default": 1, "context": true },
       { "name": "output_scale", "type": "float64" },
       { "name": "output_zero_point", "type": "int64" }
     ],
@@ -781,8 +885,8 @@
     "category": "Layer",
     "inputs": [
       { "name": "input", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
       { "name": "stride", "type": "int64[]", "default": 1 },
       { "name": "padding", "type": "int64[]", "default": 0 },
       { "name": "dilation", "type": "int64[]", "default": 1 },
@@ -799,8 +903,12 @@
     "category": "Layer",
     "inputs": [
       { "name": "input", "type": "Tensor" },
-      { "name": "weight", "type": "Tensor" },
-      { "name": "bias", "type": "Tensor" },
+      { "name": "weight", "type": "Tensor", "context": true },
+      { "name": "bias", "type": "Tensor", "context": true },
+      { "name": "stride", "type": "int64[]", "default": 1, "context": true },
+      { "name": "padding", "type": "int64[]", "default": 0, "context": true },
+      { "name": "dilation", "type": "int64[]", "default": 1, "context": true },
+      { "name": "groups", "type": "int64", "default": 1, "context": true },
       { "name": "output_scale", "type": "float64" },
       { "name": "output_zero_point", "type": "int64" }
     ],
@@ -1109,11 +1217,9 @@
   {
     "name": "torch.adaptive_avg_pool1d",
     "category": "Pool",
-    "attributes": [
-      { "name": "output_size", "type": "int64[]", "visible": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "output_size", "type": "int64[]", "visible": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -1122,11 +1228,9 @@
   {
     "name": "torch.adaptive_avg_pool2d",
     "category": "Pool",
-    "attributes": [
-      { "name": "output_size", "type": "int64[]", "visible": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "output_size", "type": "int64[]", "visible": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -1135,11 +1239,9 @@
   {
     "name": "torch.adaptive_avg_pool3d",
     "category": "Pool",
-    "attributes": [
-      { "name": "output_size", "type": "int64[]", "visible": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "output_size", "type": "int64[]", "visible": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -1148,11 +1250,9 @@
   {
     "name": "torch.adaptive_max_pool1d",
     "category": "Pool",
-    "attributes": [
-      { "name": "output_size", "type": "int64[]", "visible": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "output_size", "type": "int64[]", "visible": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" },
@@ -1162,11 +1262,9 @@
   {
     "name": "torch.adaptive_max_pool2d",
     "category": "Pool",
-    "attributes": [
-      { "name": "output_size", "type": "int64[]", "visible": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "output_size", "type": "int64[]", "visible": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" },
@@ -1176,11 +1274,9 @@
   {
     "name": "torch.adaptive_max_pool3d",
     "category": "Pool",
-    "attributes": [
-      { "name": "output_size", "type": "int64[]", "visible": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "output_size", "type": "int64[]", "visible": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" },
@@ -1188,18 +1284,52 @@
     ]
   },
   {
+    "name": "torch.atan",
+    "inputs": [
+      { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.atan_",
+    "inputs": [
+      { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.arctan",
+    "inputs": [
+      { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.arctan_",
+    "inputs": [
+      { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
     "name": "torch.avg_pool1d",
     "category": "Pool",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
       { "name": "kernel_size", "type": "int64[]" },
       { "name": "stride", "type": "int64[]" },
       { "name": "padding", "type": "int64[]", "default": 0 },
       { "name": "ceil_mode", "type": "boolean", "default": false },
       { "name": "count_include_pad", "type": "boolean", "default": true },
       { "name": "divisor_override" }
-    ],
-    "inputs": [
-      { "name": "input", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -1262,6 +1392,30 @@
     ]
   },
   {
+    "name": "torch.gather:",
+    "inputs": [
+      { "name": "selm", "type": "Tensor" },
+      { "name": "dim", "type": "int64" },
+      { "name": "index", "type": "Tensor" },
+      { "name": "sparse_grad", "type": "boolean", "default": false }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.gather:dimname",
+    "inputs": [
+      { "name": "selm", "type": "Tensor" },
+      { "name": "dim", "type": "Dimname" },
+      { "name": "index", "type": "Tensor" },
+      { "name": "sparse_grad", "type": "boolean", "default": false }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
     "name": "torch.group_norm",
     "category": "Normalization",
     "inputs": [
@@ -1271,6 +1425,16 @@
       { "name": "bias", "type": "Tensor", "optional": true },
       { "name": "eps", "type": "float32", "default": 0.00001 },
       { "name": "cudnn_enabled", "type": "boolean", "visible": true }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.relu",
+    "category": "Activation",
+    "inputs": [
+      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -1287,7 +1451,17 @@
     ]
   },
   {
-    "name": "torch.relu",
+    "name": "torch.relu6",
+    "category": "Activation",
+    "inputs": [
+      { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.relu6_",
     "category": "Activation",
     "inputs": [
       { "name": "self", "type": "Tensor" }
@@ -1398,13 +1572,11 @@
   {
     "name": "torch.threshold",
     "category": "Activation",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
       { "name": "threshold", "type": "float64", "default": 0 },
       { "name": "value", "type": "float64", "default": 0 },
       { "name": "inplace", "type": "boolean", "default": false }
-    ],
-    "inputs": [
-      { "name": "input", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -1413,13 +1585,21 @@
   {
     "name": "torch.threshold_",
     "category": "Activation",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
       { "name": "threshold", "type": "float64" },
       { "name": "value", "type": "float64" },
       { "name": "inplace", "type": "boolean" }
     ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.tile",
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "self", "type": "Tensor" },
+      { "name": "dims", "type": "int64[]" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -1501,16 +1681,14 @@
     ]
   },
   {
-    "name": "torch.slice",
+    "name": "torch.slice:Tensor",
     "category": "Tensor",
-    "attributes": [
-      { "name": "dim", "type": "int64", "default": 0 },
-      { "name": "start", "type": "int64", "default": 0 },
-      { "name": "end", "type": "int64", "default": 9223372036854776000 },
-      { "name": "step", "type": "int64", "default": 1 }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "self", "type": "Tensor" },
+      { "name": "dim", "type": "int64", "default": 0 },
+      { "name": "start", "type": "int64", "optional": true, "default": 0 },
+      { "name": "end", "type": "int64", "optional": true, "default": 9223372036854776000 },
+      { "name": "step", "type": "int64", "default": 1 }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -1725,12 +1903,50 @@
     ]
   },
   {
-    "name": "torch.pow",
-    "attributes": [
+    "name": "torch.pow:Tensor_Tensor",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "exponent", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.pow:Scalar",
+    "inputs": [
+      { "name": "self", "type": "Scalar" },
+      { "name": "exponent", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.pow:Tensor_Scalar",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "exponent", "type": "Scalar" }
     ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.pow_:Tensor",
     "inputs": [
-      { "name": "self", "type": "Tensor" }
+      { "name": "self", "type": "Tensor" },
+      { "name": "exponent", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.pow_:Scalar",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "exponent", "type": "Scalar" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -1895,12 +2111,10 @@
   },
   {
     "name": "torch.unsafe_chunk",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "chunks", "type": "int64" },
       { "name": "dim", "type": "int64", "default": 0 }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor[]" }
@@ -1908,11 +2122,9 @@
   },
   {
     "name": "torch.view",
-    "attributes": [
-      { "name": "size", "type": "int64[]", "visible": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "size", "type": "int64[]", "visible": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -1975,6 +2187,50 @@
     ]
   },
   {
+    "name": "torch.clip:",
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "min", "type": "Scalar", "optional": true, "default": null },
+      { "name": "max", "type": "Scalar", "optional": true, "default": null }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.clip:Tensor",
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "min", "type": "Tensor", "optional": true, "default": null },
+      { "name": "max", "type": "Tensor", "optional": true, "default": null }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.clip_:",
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "min", "type": "Scalar", "optional": true, "default": null },
+      { "name": "max", "type": "Scalar", "optional": true, "default": null }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.clip_:Tensor",
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "min", "type": "Tensor", "optional": true, "default": null },
+      { "name": "max", "type": "Tensor", "optional": true, "default": null }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
     "name": "torch.clone",
     "inputs": [
       { "name": "input", "type": "Tensor" }
@@ -2012,11 +2268,9 @@
   {
     "name": "torch.reshape",
     "category": "Shape",
-    "attributes": [
-      { "name": "shape", "type": "int64[]" }
-    ],
     "inputs": [
-      { "name": "self", "type": "Tensor" }
+      { "name": "self", "type": "Tensor" },
+      { "name": "shape", "type": "int64[]" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2041,13 +2295,22 @@
     ]
   },
   {
-    "name": "torch.select",
-    "attributes": [
+    "name": "torch.select:int",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "dim", "type": "int64" },
       { "name": "index", "type": "int64" }
     ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.select:Dimname",
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "self", "type": "Tensor" },
+      { "name": "dim", "type": "Dimname" },
+      { "name": "index", "type": "int64" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2385,13 +2648,42 @@
     ]
   },
   {
+    "name": "torch.mish_:",
+    "category": "Activation",
+    "inputs": [
+      { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.mish:",
+    "category": "Activation",
+    "inputs": [
+      { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
     "name": "torch.cat:",
     "category": "Tensor",
-    "attributes": [
+    "inputs": [
+      { "name": "tensors", "type": "Tensor[]" },
       { "name": "dim", "type": "int64", "default": 0 }
     ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.cat:names",
+    "category": "Tensor",
     "inputs": [
-      { "name": "tensors", "type": "Tensor[]" }
+      { "name": "tensors", "type": "Tensor[]" },
+      { "name": "dim", "type": "Dimname" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2545,6 +2837,18 @@
     ]
   },
   {
+    "name": "torch.quantize_per_tensor:qparams",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "scale", "type": "Tensor" },
+      { "name": "zero_point", "type": "Tensor" },
+      { "name": "dtype", "type": "ScalarType" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
     "name": "torch.quantize_per_tensor:tensors",
     "inputs": [
       { "name": "tensors", "type": "Tensor[]" },
@@ -2578,11 +2882,9 @@
   },
   {
     "name": "torch._cast_Byte",
-    "attributes": [
-      { "name": "non_blocking", "type": "boolean", "default": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "non_blocking", "type": "boolean", "default": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2590,11 +2892,9 @@
   },
   {
     "name": "torch._cast_Char",
-    "attributes": [
-      { "name": "non_blocking", "type": "boolean", "default": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "non_blocking", "type": "boolean", "default": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2602,11 +2902,9 @@
   },
   {
     "name": "torch._cast_Short",
-    "attributes": [
-      { "name": "non_blocking", "type": "boolean", "default": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "non_blocking", "type": "boolean", "default": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2614,11 +2912,9 @@
   },
   {
     "name": "torch._cast_Int",
-    "attributes": [
-      { "name": "non_blocking", "type": "boolean", "default": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "non_blocking", "type": "boolean", "default": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2626,11 +2922,9 @@
   },
   {
     "name": "torch._cast_Long",
-    "attributes": [
-      { "name": "non_blocking", "type": "boolean", "default": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "non_blocking", "type": "boolean", "default": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2638,11 +2932,9 @@
   },
   {
     "name": "torch._cast_Half",
-    "attributes": [
-      { "name": "non_blocking", "type": "boolean", "default": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "non_blocking", "type": "boolean", "default": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2650,11 +2942,9 @@
   },
   {
     "name": "torch._cast_Float",
-    "attributes": [
-      { "name": "non_blocking", "type": "boolean", "default": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "non_blocking", "type": "boolean", "default": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2662,11 +2952,9 @@
   },
   {
     "name": "torch._cast_Double",
-    "attributes": [
-      { "name": "non_blocking", "type": "boolean", "default": false }
-    ],
     "inputs": [
-      { "name": "input", "type": "Tensor" }
+      { "name": "input", "type": "Tensor" },
+      { "name": "non_blocking", "type": "boolean", "default": false }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2685,12 +2973,10 @@
   {
     "name": "torch.frobenius_norm:dim",
     "category": "Normalization",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "dim", "type": "int64[]" },
       { "name": "keepdim", "type": "boolean", "default": false }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2698,12 +2984,10 @@
   },
   {
     "name": "torch.norm:ScalarOpt_dtype",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "p", "type": "Scalar", "optional": true },
       { "name": "dtype", "type": "ScalarType" }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2711,14 +2995,12 @@
   },
   {
     "name": "torch.norm:ScalarOpt_dim_dtype",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "p", "type": "Scalar", "optional": true },
       { "name": "dim", "type": "int64[1]" },
       { "name": "keepdim", "type": "boolean" },
       { "name": "dtype", "type": "ScalarType" }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2726,13 +3008,11 @@
   },
   {
     "name": "torch.norm:ScalarOpt_dim",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "p", "type": "Scalar", "optional": true },
       { "name": "dim", "type": "int64[1]" },
       { "name": "keepdim", "type": "boolean", "default": false }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2740,14 +3020,12 @@
   },
   {
     "name": "torch.norm:dtype_out",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "p", "type": "Scalar", "optional": true },
       { "name": "dim", "type": "int64[1]" },
       { "name": "keepdim", "type": "boolean", "default": false },
       { "name": "dtype", "type": "ScalarType" }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2766,13 +3044,20 @@
     ]
   },
   {
-    "name": "torch.glu",
-    "category": "Activation",
-    "attributes": [
-      { "name": "dim", "type": "int64", "default": -1 }
-    ],
+    "name": "torch.numpy_T",
     "inputs": [
       { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.glu",
+    "category": "Activation",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "dim", "type": "int64", "default": -1 }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2791,11 +3076,9 @@
   {
     "name": "torch.celu",
     "category": "Activation",
-    "attributes": [
-      { "name": "alpha", "type": "Scalar", "default": 1 }
-    ],
     "inputs": [
-      { "name": "self", "type": "Tensor" }
+      { "name": "self", "type": "Tensor" },
+      { "name": "alpha", "type": "Scalar", "default": 1 }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2804,13 +3087,11 @@
   {
     "name": "torch.elu",
     "category": "Activation",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "alpha", "type": "Scalar", "default": 1 },
       { "name": "scale", "type": "Scalar", "default": 1 },
       { "name": "input_scale", "type": "Scalar", "default": 1 }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -2819,13 +3100,11 @@
   {
     "name": "torch.elu_",
     "category": "Activation",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "alpha", "type": "Scalar", "default": 1 },
       { "name": "scale", "type": "Scalar", "default": 1 },
       { "name": "input_scale", "type": "Scalar", "default": 1 }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3078,12 +3357,10 @@
   {
     "name": "torch.constant_pad_nd",
     "category": "Tensor",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "pad", "type": "int64[]" },
       { "name": "value", "type": "Scalar", "default": 0 }
-    ],
-    "inputs": [
-      { "name": "input", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3091,11 +3368,11 @@
   },
   {
     "name": "torch.ones",
-    "attributes": [
+    "inputs": [
       { "name": "size", "type": "int64[]" },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null }
     ],
     "outputs": [
@@ -3104,7 +3381,7 @@
   },
   {
     "name": "torch.empty:names",
-    "attributes": [
+    "inputs": [
       { "name": "size", "type": "int64[]" },
       { "name": "names", "type": "Dimname[]", "optional": true, "default": null },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
@@ -3119,7 +3396,7 @@
   },
   {
     "name": "torch.empty:memory_format",
-    "attributes": [
+    "inputs": [
       { "name": "size", "type": "int64[]" },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
@@ -3133,11 +3410,11 @@
   },
   {
     "name": "torch.zeros",
-    "attributes": [
+    "inputs": [
       { "name": "size", "type": "int64[]" },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null }
     ],
     "outputs": [
@@ -3146,15 +3423,13 @@
   },
   {
     "name": "torch.zeros_like",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null },
       { "name": "memory_format", "type": "MemoryFormat", "optional": true, "default": null }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3162,15 +3437,13 @@
   },
   {
     "name": "torch.ones_like",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null },
       { "name": "memory_format", "type": "MemoryFormat", "optional": true, "default": null }
-    ],
-    "inputs": [
-      { "name": "input", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3178,11 +3451,11 @@
   },
   {
     "name": "torch.arange:",
-    "attributes": [
+    "inputs": [
       { "name": "end", "type": "Scalar" },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null }
     ],
     "outputs": [
@@ -3191,12 +3464,12 @@
   },
   {
     "name": "torch.arange:start",
-    "attributes": [
+    "inputs": [
       { "name": "start", "type": "Scalar" },
       { "name": "end", "type": "Scalar" },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null }
     ],
     "outputs": [
@@ -3205,13 +3478,13 @@
   },
   {
     "name": "torch.arange:start_step",
-    "attributes": [
+    "inputs": [
       { "name": "start", "type": "Scalar" },
       { "name": "end", "type": "Scalar" },
       { "name": "step", "type": "Scalar" },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null }
     ],
     "outputs": [
@@ -3220,7 +3493,7 @@
   },
   {
     "name": "torch.arange:start_out",
-    "attributes": [
+    "inputs": [
       { "name": "start", "type": "Scalar" },
       { "name": "end", "type": "Scalar" },
       { "name": "step", "type": "Scalar", "default": 1 }
@@ -3253,11 +3526,9 @@
   },
   {
     "name": "torch.clamp_min",
-    "attributes": [
-      { "name": "min", "type": "Scalar" }
-    ],
     "inputs": [
-      { "name": "self", "type": "Tensor" }
+      { "name": "self", "type": "Tensor" },
+      { "name": "min", "type": "Scalar" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3265,11 +3536,9 @@
   },
   {
     "name": "torch.clamp_min_",
-    "attributes": [
-      { "name": "min", "type": "Scalar" }
-    ],
     "inputs": [
-      { "name": "self", "type": "Tensor" }
+      { "name": "self", "type": "Tensor" },
+      { "name": "min", "type": "Scalar" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3277,11 +3546,9 @@
   },
   {
     "name": "torch.clamp_max",
-    "attributes": [
-      { "name": "max", "type": "Scalar" }
-    ],
     "inputs": [
-      { "name": "self", "type": "Tensor" }
+      { "name": "self", "type": "Tensor" },
+      { "name": "max", "type": "Scalar" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3289,11 +3556,9 @@
   },
   {
     "name": "torch.clamp_max_",
-    "attributes": [
-      { "name": "max", "type": "Scalar" }
-    ],
     "inputs": [
-      { "name": "self", "type": "Tensor" }
+      { "name": "self", "type": "Tensor" },
+      { "name": "max", "type": "Scalar" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3564,16 +3829,38 @@
     ]
   },
   {
+    "name": "torch.upsample_linear1d:",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "output_size", "type": "int64[]" },
+      { "name": "align_corners", "type": "boolean" },
+      { "name": "scales", "type": "float32", "optional": true, "default": null }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.upsample_linear1d:vec",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "output_size", "type": "int64[]", "optional": true },
+      { "name": "align_corners", "type": "boolean" },
+      { "name": "scale_factors", "type": "float32[]", "optional": true }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
     "name": "torch.upsample_bilinear2d:",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "output_size", "type": "int64[]" },
       { "name": "align_corners", "type": "boolean" },
       { "name": "scales_h", "type": "float32", "optional": true, "default": null },
       { "name": "scales_w", "type": "float32", "optional": true, "default": null }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3582,13 +3869,24 @@
   {
     "name": "torch.upsample_bilinear2d:vec",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "output_size", "type": "int64[]", "optional": "true" },
+      { "name": "align_corners", "type": "boolean" },
+      { "name": "scales_factors", "type": "float32[]", "optional": true }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.upsample_bilinear2d:vec",
+    "category": "Layer",
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
       { "name": "output_size", "type": "int64[]", "optional": true },
       { "name": "align_corners", "type": "boolean" },
       { "name": "scale_factors", "type": "float32[]", "optional": true }
-    ],
-    "inputs": [
-      { "name": "input", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3597,12 +3895,10 @@
   {
     "name": "torch.upsample_nearest1d:",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "output_size", "type": "int64[]" },
       { "name": "scales", "type": "float32", "optional": true, "default": null }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3611,12 +3907,10 @@
   {
     "name": "torch.upsample_nearest1d:vec",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
       { "name": "output_size", "type": "int64[]", "optional": true },
       { "name": "scales_factors", "type": "float32[]", "optional": true }
-    ],
-    "inputs": [
-      { "name": "input", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3625,13 +3919,11 @@
   {
     "name": "torch.upsample_nearest2d:",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "output_size", "type": "int64[]" },
       { "name": "scales_h", "type": "float32", "optional": true, "default": null },
       { "name": "scales_w", "type": "float32", "optional": true, "default": null }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3640,12 +3932,10 @@
   {
     "name": "torch.upsample_nearest2d:vec",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
       { "name": "output_size", "type": "int64[]", "optional": true },
       { "name": "scales_factors", "type": "float32[]", "optional": true }
-    ],
-    "inputs": [
-      { "name": "input", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3654,14 +3944,12 @@
   {
     "name": "torch.upsample_nearest3d:",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "output_size", "type": "int64[]" },
       { "name": "scales_d", "type": "float32", "optional": true, "default": null },
       { "name": "scales_h", "type": "float32", "optional": true, "default": null },
       { "name": "scales_w", "type": "float32", "optional": true, "default": null }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3670,12 +3958,10 @@
   {
     "name": "torch.upsample_nearest3d:vec",
     "category": "Layer",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
       { "name": "output_size", "type": "int64[]", "optional": true },
       { "name": "scales_factors", "type": "float32[]", "optional": true }
-    ],
-    "inputs": [
-      { "name": "input", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -3683,30 +3969,25 @@
   },
   {
     "name": "torch.upsample_trilinear3d:",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "output_size", "type": "int64[]" },
       { "name": "align_corners", "type": "boolean" },
       { "name": "scales_d", "type": "float32", "optional": true, "default": null },
       { "name": "scales_h", "type": "float32", "optional": true, "default": null },
       { "name": "scales_w", "type": "float32", "optional": true, "default": null }
     ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
-    ],
     "outputs": [
-      { "name": "output", "type": "int64" }
+      { "name": "output", "type": "Tensor" }
     ]
   },
   {
     "name": "torch.upsample_trilinear3d:vec",
-    "attributes": [
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
       { "name": "output_size", "type": "int64[]", "optional": true },
-      { "name": "input_size", "type": "int64[]" },
       { "name": "align_corners", "type": "boolean" },
       { "name": "scale_factors", "type": "float32[]", "optional": true }
-    ],
-    "inputs": [
-      { "name": "grad_output", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "int64" }
@@ -3934,7 +4215,7 @@
       { "name": "size", "type": "int64[]" },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null }
     ],
     "outputs": [
@@ -3947,7 +4228,7 @@
       { "name": "high", "type": "int64", "optional": true, "default": null },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null },
       { "name": "memory_format", "type": "MemoryFormat", "optional": true, "default": null }
     ],
@@ -3962,7 +4243,7 @@
       { "name": "generator", "type": "Generator", "optional": true, "default": null },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null }
     ],
     "outputs": [
@@ -3977,7 +4258,7 @@
       { "name": "generator", "type": "Generator" },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null }
     ],
     "outputs": [
@@ -3991,7 +4272,7 @@
       { "name": "high", "type": "int64", "optional": true, "default": null },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null }
     ],
     "outputs": [
@@ -4004,7 +4285,7 @@
       { "name": "size", "type": "int64[]" },
       { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
       { "name": "layout", "type": "Layout", "optional": true, "default": null },
-      { "name": "device", "type": "Device", "optiona": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
       { "name": "pin_memory", "type": "boolean", "optional": true, "default": null }
     ],
     "outputs": [
@@ -4028,12 +4309,10 @@
   {
     "name": "torch.split:Tensor",
     "category": "Tensor",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "split_size", "type": "int64" },
       { "name": "dim", "type": "int64" }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "outputs", "type": "Tensor[]" }
@@ -4042,12 +4321,10 @@
   {
     "name": "torch.split_with_sizes",
     "category": "Tensor",
-    "attributes": [
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
       { "name": "split_sizes", "type": "int64[]" },
       { "name": "dim", "type": "int64" }
-    ],
-    "inputs": [
-      { "name": "self", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "outputs", "type": "Tensor[]" }
@@ -4133,6 +4410,18 @@
     ]
   },
   {
+    "name": "torch.scatter_add_",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "dim", "type": "int64"},
+      { "name": "index", "type": "Tensor" },
+      { "name": "src", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
     "name": "torch.sin",
     "inputs": [
       { "name": "self", "type": "Tensor" }
@@ -4172,6 +4461,16 @@
     "name": "torch.tan",
     "inputs": [
       { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.atan2:Tensor",
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "other", "type": "Tensor" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -4362,7 +4661,29 @@
     ]
   },
   {
+    "name": "torch.masked_fill_:Scalar",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "mask", "type": "Tensor" },
+      { "name": "value", "type": "Scalar" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
     "name": "torch.masked_fill:Tensor",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "mask", "type": "Tensor" },
+      { "name": "value", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.masked_fill_:Tensor",
     "inputs": [
       { "name": "self", "type": "Tensor" },
       { "name": "mask", "type": "Tensor" },
@@ -4618,6 +4939,15 @@
     ]
   },
   {
+    "name": "torch.inverse:",
+    "inputs": [
+      { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
     "name": "torch.col2im",
     "attributes": [
       { "name": "output_size", "type": "int64[]" },
@@ -4638,6 +4968,16 @@
     "inputs": [
       { "name": "self", "type": "Tensor" },
       { "name": "other", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.eq:Scalar",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Scalar" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }
@@ -5322,8 +5662,48 @@
   {
     "name": "ops.quantized.mul:Scalar2",
     "inputs": [
-      { "name": "a", "type": "Scalar" },
-      { "name": "qb", "type": "Tensor" }
+      { "name": "b", "type": "Scalar" },
+      { "name": "qa", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "qc", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "ops.quantized.mul_relu:Scalar",
+    "inputs": [
+      { "name": "qa", "type": "Tensor" },
+      { "name": "b", "type": "Scalar" }
+    ],
+    "outputs": [
+      { "name": "qc", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "ops.quantized.mul_relu:Scalar2",
+    "inputs": [
+      { "name": "b", "type": "Scalar" },
+      { "name": "qa", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "qc", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "ops.quantized.mul_scalar",
+    "inputs": [
+      { "name": "qa", "type": "Tensor" },
+      { "name": "qb", "type": "Scalar" }
+    ],
+    "outputs": [
+      { "name": "qc", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "ops.quantized.mul_scalar_relu",
+    "inputs": [
+      { "name": "qa", "type": "Tensor" },
+      { "name": "qb", "type": "Scalar" }
     ],
     "outputs": [
       { "name": "qc", "type": "Tensor" }
@@ -5333,7 +5713,7 @@
     "name": "ops.quantized.relu6",
     "category": "Activation",
     "inputs": [
-      { "name": "qx", "type": "Scalar" },
+      { "name": "qx", "type": "Tensor" },
       { "name": "inplace", "type": "boolean", "default": false }
     ],
     "outputs": [
@@ -5344,7 +5724,7 @@
     "name": "ops.quantized.leaky_relu",
     "category": "Activation",
     "inputs": [
-      { "name": "qx", "type": "Scalar" },
+      { "name": "qx", "type": "Tensor" },
       { "name": "negative_slope", "type": "Scalar", "default": false },
       { "name": "inplace", "type": "boolean" },
       { "name": "output_scale", "type": "float32" },
@@ -5358,7 +5738,7 @@
     "name": "ops.quantized.sigmoid",
     "category": "Activation",
     "inputs": [
-      { "name": "qx", "type": "Scalar" },
+      { "name": "qx", "type": "Tensor" },
       { "name": "output_scale", "type": "float32" },
       { "name": "output_zero_point", "type": "int64" }
     ],
@@ -5523,7 +5903,7 @@
       { "name": "dim", "type": "int64", "default": 0 }
     ],
     "outputs": [
-      { "name": "output", "type": "Tensor" }
+      { "name": "output", "type": "Tensor[]" }
     ]
   },
   {
@@ -5533,7 +5913,7 @@
       { "name": "dim", "type": "Dimname" }
     ],
     "outputs": [
-      { "name": "output", "type": "Tensor" }
+      { "name": "output", "type": "Tensor[]" }
     ]
   },
   {
@@ -5582,6 +5962,251 @@
       { "name": "scale_factor", "type": "int64", "optional": true, "default": null },
       { "name": "mode", "type": "string", "default": "nearest" },
       { "name": "align_corners", "type": "boolean", "optional": true, "default": null }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.triu_",
+    "category": "Layer",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "diagonal", "type": "int64", "default": 0 }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.triu:out",
+    "category": "Layer",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "diagonal", "type": "int64", "default": 0 }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.view_as_real",
+    "category": "Layer",
+    "inputs": [
+      { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.view_as_complex",
+    "category": "Layer",
+    "inputs": [
+      { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "ops.torchvision.nms",
+    "inputs": [
+      { "name": "dets", "type": "Tensor" },
+      { "name": "scores", "type": "Tensor" },
+      { "name": "iou_threshold", "type": "float32" }
+
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "ops.torchvision.roi_align",
+    "inputs": [
+      { "name": "input", "type": "Tensor" },
+      { "name": "rois", "type": "Tensor" },
+      { "name": "spatial_scale", "type": "float32" },
+      { "name": "pooled_height", "type": "int64" },
+      { "name": "pooled_width", "type": "int64" },
+      { "name": "sampling_ratio", "type": "int64" },
+      { "name": "aligned", "type": "boolean" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.__xor__:Scalar",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Scalar" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.__xor__:Tensor",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.__lshift__:Scalar",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Scalar" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.__lshift__:Tensor",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.__rshift__:Scalar",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Scalar" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.__rshift__:Tensor",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.__ixor__:Scalar",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Scalar" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.__ixor__:Tensor",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.__ilshift__:Scalar",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Scalar" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.__ilshift__:Tensor",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.__irshift__:Scalar",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Scalar" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.__irshift__:Tensor",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "other", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.one_hot:",
+    "inputs": [
+      { "name": "self", "type": "Tensor" },
+      { "name": "num_classes", "type": "int64", "default": -1 }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.hann_window:",
+    "inputs": [
+      { "name": "window_length", "type": "int64" },
+      { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
+      { "name": "layout", "type": "Layout", "optional": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
+      { "name": "pin_memory", "type": "boolean", "optional": true, "default": null }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.hann_window:periodic",
+    "inputs": [
+      { "name": "window_length", "type": "int64" },
+      { "name": "periodic", "type": "boolean" },
+      { "name": "dtype", "type": "ScalarType", "optional": true, "default": null },
+      { "name": "layout", "type": "Layout", "optional": true, "default": null },
+      { "name": "device", "type": "Device", "optional": true, "default": null },
+      { "name": "pin_memory", "type": "boolean", "optional": true, "default": null }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch.nonzero_numpy",
+    "inputs": [
+      { "name": "self", "type": "Tensor" }
+    ],
+    "outputs": [
+      { "name": "output", "type": "Tensor" }
+    ]
+  },
+  {
+    "name": "torch._dim_arange:",
+    "inputs": [
+      { "name": "like", "type": "Tensor" },
+      { "name": "dim", "type": "int64" }
     ],
     "outputs": [
       { "name": "output", "type": "Tensor" }

@@ -8,17 +8,28 @@ var python = python || require('./python');
 npz.ModelFactory = class {
 
     match(context) {
-        switch (npz.Utility.format(context)) {
-            case 'npy':
-            case 'npz':
-            case 'pickle':
-            case 'numpy.ndarray':
-                return true;
+        const stream = context.stream;
+        const signature = [ 0x93, 0x4E, 0x55, 0x4D, 0x50, 0x59 ];
+        if (signature.length <= stream.length && stream.peek(signature.length).every((value, index) => value === signature[index])) {
+            return 'npy';
         }
-        return false;
+        const entries = context.entries('zip');
+        if (entries.size > 0 && Array.from(entries.keys()).every((name) => name.endsWith('.npy'))) {
+            return 'npz';
+        }
+        const obj = context.open('pkl');
+        if (obj) {
+            if (npz.Utility.isTensor(obj)) {
+                return 'numpy.ndarray';
+            }
+            if (npz.Utility.weights(obj)) {
+                return 'pickle';
+            }
+        }
+        return undefined;
     }
 
-    open(context) {
+    open(context, match) {
         return context.require('./numpy').then((numpy) => {
             let format = '';
             const groups = new Map();
@@ -36,7 +47,7 @@ npz.ModelFactory = class {
                     data: array.data,
                 };
             };
-            switch (npz.Utility.format(context)) {
+            switch (match) {
                 case 'npy': {
                     format = 'NumPy Array';
                     const stream = context.stream;
@@ -52,11 +63,12 @@ npz.ModelFactory = class {
                 case 'npz': {
                     format = 'NumPy Zip';
                     const execution = new python.Execution(null);
-                    for (const entry of context.entries('zip')) {
-                        if (!entry.name.endsWith('.npy')) {
+                    const entries = context.entries('zip');
+                    for (const entry of entries) {
+                        if (!entry[0].endsWith('.npy')) {
                             throw new npz.Error("Invalid file name '" + entry.name + "'.");
                         }
-                        const name = entry.name.replace(/\.npy$/, '');
+                        const name = entry[0].replace(/\.npy$/, '');
                         const parts = name.split('/');
                         const parameterName = parts.pop();
                         const groupName = parts.join('/');
@@ -64,13 +76,14 @@ npz.ModelFactory = class {
                             groups.set(groupName, { name: groupName, parameters: [] });
                         }
                         const group = groups.get(groupName);
-                        const data = entry.data;
-                        let array = new numpy.Array(data);
-                        if (array.byteOrder === '|') {
+                        const stream = entry[1];
+                        const buffer = stream.peek();
+                        let array = new numpy.Array(buffer);
+                        if (array.byteOrder === '|' && array.dataType !== 'u1' && array.dataType !== 'i1') {
                             if (array.dataType !== 'O') {
                                 throw new npz.Error("Invalid data type '" + array.dataType + "'.");
                             }
-                            const unpickler = new python.Unpickler(array.data);
+                            const unpickler = python.Unpickler.open(array.data);
                             const root = unpickler.load((name, args) => execution.invoke(name, args));
                             array = { dataType: root.dtype.name, shape: null, data: null, byteOrder: '|' };
                         }
@@ -222,7 +235,7 @@ npz.Node = class {
 
     constructor(group) {
         this._name = group.name || '';
-        this._type = group.type || 'Module';
+        this._type = { name: group.type || 'Module' };
         this._inputs = [];
         for (const parameter of group.parameters) {
             const name = this._name ? [ this._name, parameter.name ].join('/') : parameter.name;
@@ -240,10 +253,6 @@ npz.Node = class {
 
     get name() {
         return this._name;
-    }
-
-    get metadata() {
-        return null;
     }
 
     get inputs() {
@@ -305,12 +314,8 @@ npz.Tensor = class  {
         context.index = 0;
         context.count = 0;
         context.state = null;
-        if (this._byteOrder !== '<' && this._byteOrder !== '>') {
+        if (this._byteOrder !== '<' && this._byteOrder !== '>' && this._type.dataType !== 'uint8' && this._type.dataType !== 'int8') {
             context.state = 'Tensor byte order is not supported.';
-            return context;
-        }
-        if (this._reference) {
-            context.state = 'Tensor reference not implemented.';
             return context;
         }
         if (!this._data || this._data.length == 0) {
@@ -491,28 +496,6 @@ npz.TensorShape = class {
 
 npz.Utility = class {
 
-    static format(context) {
-        const stream = context.stream;
-        const signature = [ 0x93, 0x4E, 0x55, 0x4D, 0x50, 0x59 ];
-        if (signature.length <= stream.length && stream.peek(signature.length).every((value, index) => value === signature[index])) {
-            return 'npy';
-        }
-        const entries = context.entries('zip');
-        if (entries.length > 0 && entries.every((entry) => entry.name.endsWith('.npy'))) {
-            return 'npz';
-        }
-        const obj = context.open('pkl');
-        if (obj) {
-            if (npz.Utility.isTensor(obj)) {
-                return 'numpy.ndarray';
-            }
-            if (npz.Utility.weights(obj)) {
-                return 'pickle';
-            }
-        }
-        return null;
-    }
-
     static isTensor(obj) {
         return obj && obj.__class__ && obj.__class__.__module__ === 'numpy' && obj.__class__.__name__ === 'ndarray';
     }
@@ -532,15 +515,23 @@ npz.Utility = class {
                     return weights;
                 }
                 else if (!Array.isArray(dict)) {
-                    const set = new Set([ 'weight_order', 'lr', 'model_iter' ]);
-                    for (const key in dict) {
-                        const value = dict[key];
+                    const set = new Set([ 'weight_order', 'lr', 'model_iter', '__class__' ]);
+                    for (const entry of Object.entries(dict)) {
+                        const key = entry[0];
+                        const value = entry[1];
                         if (key) {
                             if (npz.Utility.isTensor(value)) {
                                 weights.set(key, value);
                                 continue;
                             }
                             if (set.has(key)) {
+                                continue;
+                            }
+                            if (value && !Array.isArray(value) && Object.entries(value).every((entry) => npz.Utility.isTensor(entry[1]))) {
+                                const name = key;
+                                for (const entry of Object.entries(value)) {
+                                    weights.set(name + '.' + entry[0], entry[1]);
+                                }
                                 continue;
                             }
                         }

@@ -16,12 +16,12 @@ sklearn.ModelFactory = class {
             return false;
         };
         if (validate(obj)) {
-            return true;
+            return 'sklearn';
         }
         if (Array.isArray(obj) && obj.every((item) => validate(item))) {
-            return true;
+            return 'sklearn';
         }
-        return false;
+        return undefined;
     }
 
     open(context) {
@@ -207,10 +207,10 @@ sklearn.Argument = class {
 sklearn.Node = class {
 
     constructor(metadata, group, name, obj, inputs, outputs) {
-        this._metadata = metadata;
         this._group = group || '';
         this._name = name || '';
-        this._type = obj.__class__ ? obj.__class__.__module__ + '.' + obj.__class__.__name__ : 'Object';
+        const type = obj.__class__ ? obj.__class__.__module__ + '.' + obj.__class__.__name__ : 'Object';
+        this._type = metadata.type(type) || { name: type };
         this._inputs = inputs;
         this._outputs = outputs;
         this._attributes = [];
@@ -239,10 +239,6 @@ sklearn.Node = class {
 
     get group() {
         return this._group ? this._group : null;
-    }
-
-    get metadata() {
-        return this._metadata.type(this._type);
     }
 
     get inputs() {
@@ -505,8 +501,8 @@ sklearn.Tensor = class {
                     case 'string': {
                         const buffer = context.data.subarray(context.index, context.index + context.itemsize);
                         const index = buffer.indexOf(0);
-                        const text = context.decoder.decode(index >= 0 ? buffer.subarray(0, index) : buffer);
-                        results.push(text);
+                        const content = context.decoder.decode(index >= 0 ? buffer.subarray(0, index) : buffer);
+                        results.push(content);
                         context.index += context.itemsize;
                         context.count++;
                         break;
@@ -592,32 +588,32 @@ sklearn.Metadata = class {
     }
 
     constructor(data) {
-        this._map = new Map();
-        this._attributeCache = new Map();
+        this._types = new Map();
+        this._attributes = new Map();
         if (data) {
             const metadata = JSON.parse(data);
-            this._map = new Map(metadata.map((item) => [ item.name, item ]));
+            this._types = new Map(metadata.map((item) => [ item.name, item ]));
         }
     }
 
     type(name) {
-        return this._map.get(name);
+        return this._types.get(name);
     }
 
     attribute(type, name) {
         const key = type + ':' + name;
-        if (!this._attributeCache.has(key)) {
+        if (!this._attributes.has(key)) {
             const schema = this.type(type);
             if (schema && schema.attributes && schema.attributes.length > 0) {
                 for (const attribute of schema.attributes) {
-                    this._attributeCache.set(type + ':' + attribute.name, attribute);
+                    this._attributes.set(type + ':' + attribute.name, attribute);
                 }
             }
-            if (!this._attributeCache.has(key)) {
-                this._attributeCache.set(key, null);
+            if (!this._attributes.has(key)) {
+                this._attributes.set(key, null);
             }
         }
-        return this._attributeCache.get(key);
+        return this._attributes.get(key);
     }
 };
 

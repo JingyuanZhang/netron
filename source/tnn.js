@@ -1,7 +1,7 @@
 /* jshint esversion: 6 */
 
 var tnn = tnn || {};
-var base = base || require('./base');
+var text = text || require('./text');
 
 tnn.ModelFactory = class {
 
@@ -9,14 +9,14 @@ tnn.ModelFactory = class {
         const identifier = context.identifier.toLowerCase();
         if (identifier.endsWith('.tnnproto')) {
             try {
-                const reader = base.TextReader.create(context.stream.peek(), 2048);
-                const text = reader.read();
-                if (text !== undefined) {
-                    const line = text.trim();
+                const reader = text.Reader.open(context.stream.peek(), 2048);
+                const content = reader.read();
+                if (content !== undefined) {
+                    const line = content.trim();
                     if (line.startsWith('"') && line.endsWith('"')) {
                         const header = line.replace(/(^")|("$)/g, '').split(',').shift().trim().split(' ');
                         if (header.length === 3 || (header.length >= 4 && (header[3] === '4206624770' || header[3] == '4206624772'))) {
-                            return true;
+                            return 'tnn.model';
                         }
                     }
                 }
@@ -29,31 +29,32 @@ tnn.ModelFactory = class {
             const stream = context.stream;
             for (const signature of [ [ 0x02, 0x00, 0xbc, 0xfa ], [ 0x04, 0x00, 0xbc, 0xfa ] ]) {
                 if (signature.length <= stream.length && stream.peek(signature.length).every((value, index) => value === signature[index])) {
-                    return true;
+                    return 'tnn.params';
                 }
             }
         }
-        return false;
+        return '';
     }
 
-    open(context) {
+    open(context, match) {
         return tnn.Metadata.open(context).then((metadata) => {
-            const identifier = context.identifier.toLowerCase();
-            if (identifier.endsWith('.tnnproto')) {
-                const tnnmodel = context.identifier.substring(0, context.identifier.length - 9) + '.tnnmodel';
-                return context.request(tnnmodel, null).then((stream) => {
-                    const buffer = stream.peek();
-                    return new tnn.Model(metadata, context.stream.peek(), buffer);
-                }).catch(() => {
-                    return new tnn.Model(metadata, context.stream.peek(), null);
-                });
-            }
-            else if (identifier.endsWith('.tnnmodel')) {
-                const tnnproto = context.identifier.substring(0, context.identifier.length - 9) + '.tnnproto';
-                return context.request(tnnproto, null).then((stream) => {
-                    const buffer = stream.peek();
-                    return new tnn.Model(metadata, buffer, context.stream.peek());
-                });
+            switch (match) {
+                case 'tnn.model': {
+                    const tnnmodel = context.identifier.substring(0, context.identifier.length - 9) + '.tnnmodel';
+                    return context.request(tnnmodel, null).then((stream) => {
+                        const buffer = stream.peek();
+                        return new tnn.Model(metadata, context.stream.peek(), buffer);
+                    }).catch(() => {
+                        return new tnn.Model(metadata, context.stream.peek(), null);
+                    });
+                }
+                case 'tnn.params': {
+                    const tnnproto = context.identifier.substring(0, context.identifier.length - 9) + '.tnnproto';
+                    return context.request(tnnproto, null).then((stream) => {
+                        const buffer = stream.peek();
+                        return new tnn.Model(metadata, buffer, context.stream.peek());
+                    });
+                }
             }
         });
     }
@@ -62,8 +63,9 @@ tnn.ModelFactory = class {
 tnn.Model = class {
 
     constructor(metadata, tnnproto, tnnmodel) {
-        this._graphs = [];
-        this._graphs.push(new tnn.Graph(metadata, tnnproto, tnnmodel));
+        this._graphs = [
+            new tnn.Graph(metadata, tnnproto, tnnmodel)
+        ];
     }
 
     get format() {
@@ -159,21 +161,17 @@ tnn.Argument = class {
 tnn.Node = class {
 
     constructor(metadata, resources, layer) {
-        this._metadata = metadata;
         this._inputs = [];
         this._outputs = [];
         this._attributes = [];
-        this._type = layer.type;
         this._name = layer.name;
-
-        const operator = metadata.operator(this._type);
+        let type = layer.type;
+        const operator = metadata.operator(type);
         if (operator) {
-            this._type = operator;
+            type = operator;
         }
-
-        const schema = metadata.type(this._type);
-
-        const attributeSchemas = schema && schema.attributes ? schema && schema.attributes.slice() : [];
+        this._type = metadata.type(type) || { name: type };
+        const attributeSchemas = this._type && this._type.attributes ? this._type && this._type.attributes.slice() : [];
         const attributes = layer.attributes.slice();
         while (attributes.length > 0) {
             const attributeSchema = attributeSchemas.shift();
@@ -193,8 +191,8 @@ tnn.Node = class {
 
         const inputs = layer.inputs;
         let inputIndex = 0;
-        if (schema && schema.inputs) {
-            for (const inputDef of schema.inputs) {
+        if (this._type && this._type.inputs) {
+            for (const inputDef of this._type.inputs) {
                 if (inputIndex < inputs.length || inputDef.option != 'optional') {
                     const inputCount = (inputDef.option == 'variadic') ? (inputs.length - inputIndex) : 1;
                     const inputArguments = inputs.slice(inputIndex, inputIndex + inputCount).filter((id) => id != '' || inputDef.option != 'optional').map((id) => {
@@ -214,8 +212,8 @@ tnn.Node = class {
 
         const outputs = layer.outputs;
         let outputIndex = 0;
-        if (schema && schema.outputs) {
-            for (const outputDef of schema.outputs) {
+        if (this._type && this._type.outputs) {
+            for (const outputDef of this._type.outputs) {
                 if (outputIndex < outputs.length || outputDef.option != 'optional') {
                     const outputCount = (outputDef.option == 'variadic') ? (outputs.length - outputIndex) : 1;
                     const outputArguments = outputs.slice(outputIndex, outputIndex + outputCount).map((id) => {
@@ -232,7 +230,7 @@ tnn.Node = class {
                 return new tnn.Parameter(outputName, [ new tnn.Argument(output, null, null) ]);
             }));
         }
-        switch (this._type) {
+        switch (type) {
             case 'Convolution':
             case 'ConvolutionDepthWise':
             case 'Deconvolution':
@@ -354,10 +352,6 @@ tnn.Node = class {
 
     get name() {
         return this._name;
-    }
-
-    get metadata() {
-        return this._metadata.type(this._type);
     }
 
     get attributes() {
@@ -634,7 +628,7 @@ tnn.Metadata = class {
 tnn.TextProtoReader = class {
 
     constructor(buffer) {
-        const reader = base.TextReader.create(buffer);
+        const reader = text.Reader.open(buffer);
         let lines = [];
         for (;;) {
             const line = reader.read();
@@ -781,7 +775,7 @@ tnn.LayerResourceReader = class {
                             resource.bias = raw(reader);
                         }
                         if (resource.filter.dataType === 'int8') {
-                            resource.quantized = raw();
+                            resource.quantized = raw(reader);
                         }
                         break;
                     }
@@ -799,7 +793,7 @@ tnn.LayerResourceReader = class {
                         resource.weight = raw(reader);
                         resource.bias = raw(reader);
                         if (resource.weight.dataType === 'int8') {
-                            resource.scale = raw();
+                            resource.scale = raw(reader);
                         }
                         break;
                     }
@@ -911,9 +905,9 @@ tnn.BinaryReader = class {
     }
 
     expect(name) {
-        const text = this.string();
-        if (name !== text) {
-            throw new tnn.Error("Invalid string '" + text + "' instead of '" + name + "'.");
+        const content = this.string();
+        if (name !== content) {
+            throw new tnn.Error("Invalid string '" + content + "' instead of '" + name + "'.");
         }
     }
 };

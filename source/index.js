@@ -9,6 +9,7 @@ host.BrowserHost = class {
     constructor() {
         this._document = window.document;
         this._window = window;
+        this._navigator = navigator;
         if (this._window.location.hostname.endsWith('.github.io')) {
             this._window.location.replace('https://netron.app');
         }
@@ -26,8 +27,8 @@ host.BrowserHost = class {
         this._version = this._meta.version ? this._meta.version[0] : null;
         this._telemetry = this._version && this._version !== '0.0.0';
         this._environment = new Map();
-        this._environment.set('zoom', 'd3');
-        // this._environment.set('zoom', 'scroll');
+        this._environment.set('zoom', 'scroll');
+        // this._environment.set('zoom', 'drag');
     }
 
     get window() {
@@ -46,8 +47,12 @@ host.BrowserHost = class {
         return this._type;
     }
 
-    get browser() {
-        return true;
+    get agent() {
+        const userAgent = this._navigator.userAgent.toLowerCase();
+        if (userAgent.indexOf('safari') !== -1 && userAgent.indexOf('chrome') === -1) {
+            return 'safari';
+        }
+        return 'any';
     }
 
     initialize(view) {
@@ -194,7 +199,7 @@ host.BrowserHost = class {
         if (this._meta.file) {
             const url = this._meta.file[0];
             if (this._view.accept(url)) {
-                this._openModel(url, null);
+                this._openModel(this._url(url), null);
                 return;
             }
         }
@@ -215,7 +220,6 @@ host.BrowserHost = class {
             return;
         }
 
-        this._view.show('welcome');
         const openFileButton = this.document.getElementById('open-file-button');
         const openFileDialog = this.document.getElementById('open-file-dialog');
         if (openFileButton && openFileDialog) {
@@ -257,6 +261,8 @@ host.BrowserHost = class {
                 }
             }
         });
+
+        this._view.show('welcome');
     }
 
     environment(name) {
@@ -429,7 +435,7 @@ host.BrowserHost = class {
             if (location.endsWith('/')) {
                 location = location.slice(0, -1);
             }
-            url = location + '/' + file;
+            url = location + '/' + (file.startsWith('/') ? file.substring(1) : file);
         }
         return url;
     }

@@ -11,13 +11,13 @@ mnn.ModelFactory = class {
             const extension = context.identifier.split('.').pop().toLowerCase();
             if (extension == 'mnn') {
                 const buffer = stream.peek(4);
-                const reader = new flatbuffers.Reader(buffer);
+                const reader = flatbuffers.BinaryReader.open(buffer);
                 if (reader.root === 0x00000018 || reader.root === 0x0000001C || reader.root === 0x00000020) {
-                    return true;
+                    return 'mnn.flatbuffers';
                 }
             }
         }
-        return false;
+        return undefined;
     }
 
     open(context) {
@@ -25,14 +25,13 @@ mnn.ModelFactory = class {
             let net = null;
             try {
                 mnn.schema = flatbuffers.get('mnn').MNN;
-                const buffer = context.stream.peek();
-                const reader = new flatbuffers.Reader(buffer);
+                const stream = context.stream;
+                const reader = flatbuffers.BinaryReader.open(stream);
                 net = mnn.schema.Net.create(reader);
             }
             catch (error) {
                 const message = error && error.message ? error.message : error.toString();
                 throw new mnn.Error('File format is not mnn.Net (' + message.replace(/\.$/, '') + ').');
-
             }
             return mnn.Metadata.open(context).then((metadata) => {
                 return new mnn.Model(metadata, net);
@@ -44,11 +43,13 @@ mnn.ModelFactory = class {
 mnn.Model = class {
 
     constructor(metadata, net) {
+        const NetSource = mnn.schema.NetSource;
         switch (net.sourceType) {
-            case mnn.schema.NetSource.CAFFE: this._source = 'Caffe'; break;
-            case mnn.schema.NetSource.TENSORFLOW: this._source = 'TensorFlow'; break;
-            case mnn.schema.NetSource.TFLITE: this._source = 'TensorFlow Lite'; break;
-            case mnn.schema.NetSource.ONNX: this._source = 'ONNX'; break;
+            case NetSource.CAFFE: this._source = 'Caffe'; break;
+            case NetSource.TENSORFLOW: this._source = 'TensorFlow'; break;
+            case NetSource.TFLITE: this._source = 'TensorFlow Lite'; break;
+            case NetSource.ONNX: this._source = 'ONNX'; break;
+            case NetSource.TORCH: this._source = 'Torch'; break;
         }
         this._graphs = [ new mnn.Graph(metadata, net) ];
     }
@@ -138,8 +139,8 @@ mnn.Graph = class {
 mnn.Node = class {
 
     constructor(metadata, op, net) {
-        this._metadata = metadata;
-        this._type = mnn.Utility.enum('OpType', op.type) || '(' + op.type.toString() + ')';
+        const type = mnn.Utility.enum('OpType', op.type) || '(' + op.type.toString() + ')';
+        this._type = metadata.type(type) || { name: type };
         this._name = op.name || '';
         this._attributes = [];
         this._inputs = [];
@@ -264,14 +265,6 @@ mnn.Node = class {
         return this._name;
     }
 
-    get domain() {
-        return null;
-    }
-
-    get metadata() {
-        return this._metadata.type(this.type);
-    }
-
     get group() {
         return null;
     }
@@ -299,7 +292,7 @@ mnn.Attribute = class {
         this._type = null;
         this._value = ArrayBuffer.isView(value) ? Array.from(value) : value;
         this._name = name;
-        this._visible = visible;
+        this._visible = visible ? true : false;
         if (schema) {
             if (schema.type) {
                 this._type = schema.type;

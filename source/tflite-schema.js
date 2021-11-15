@@ -358,7 +358,16 @@ $root.tflite.BuiltinOperator = {
     HASHTABLE: 136,
     HASHTABLE_FIND: 137,
     HASHTABLE_IMPORT: 138,
-    HASHTABLE_SIZE: 139
+    HASHTABLE_SIZE: 139,
+    REDUCE_ALL: 140,
+    CONV_3D_TRANSPOSE: 141,
+    VAR_HANDLE: 142,
+    READ_VARIABLE: 143,
+    ASSIGN_VARIABLE: 144,
+    BROADCAST_ARGS: 145,
+    RANDOM_STANDARD_NORMAL: 146,
+    BUCKETIZE: 147,
+    RANDOM_UNIFORM: 148
 };
 
 $root.tflite.BuiltinOptions = class {
@@ -475,6 +484,11 @@ $root.tflite.BuiltinOptions = class {
             case 108: return $root.tflite.HashtableFindOptions.decode(reader, position);
             case 109: return $root.tflite.HashtableImportOptions.decode(reader, position);
             case 110: return $root.tflite.HashtableSizeOptions.decode(reader, position);
+            case 111: return $root.tflite.VarHandleOptions.decode(reader, position);
+            case 112: return $root.tflite.ReadVariableOptions.decode(reader, position);
+            case 113: return $root.tflite.AssignVariableOptions.decode(reader, position);
+            case 114: return $root.tflite.RandomOptions.decode(reader, position);
+            case 115: return $root.tflite.BucketizeOptions.decode(reader, position);
         }
         return undefined;
     }
@@ -591,6 +605,11 @@ $root.tflite.BuiltinOptions = class {
             case 'HashtableFindOptions': return $root.tflite.HashtableFindOptions.decodeText(reader, json);
             case 'HashtableImportOptions': return $root.tflite.HashtableImportOptions.decodeText(reader, json);
             case 'HashtableSizeOptions': return $root.tflite.HashtableSizeOptions.decodeText(reader, json);
+            case 'VarHandleOptions': return $root.tflite.VarHandleOptions.decodeText(reader, json);
+            case 'ReadVariableOptions': return $root.tflite.ReadVariableOptions.decodeText(reader, json);
+            case 'AssignVariableOptions': return $root.tflite.AssignVariableOptions.decodeText(reader, json);
+            case 'RandomOptions': return $root.tflite.RandomOptions.decodeText(reader, json);
+            case 'BucketizeOptions': return $root.tflite.BucketizeOptions.decodeText(reader, json);
         }
         return undefined;
     }
@@ -2343,6 +2362,81 @@ $root.tflite.HashtableSizeOptions = class HashtableSizeOptions {
     }
 };
 
+$root.tflite.VarHandleOptions = class VarHandleOptions {
+
+    static decode(reader, position) {
+        const $ = new $root.tflite.VarHandleOptions();
+        $.container = reader.string_(position, 4, null);
+        $.shared_name = reader.string_(position, 6, null);
+        return $;
+    }
+
+    static decodeText(reader, json) {
+        const $ = new $root.tflite.VarHandleOptions();
+        $.container = reader.value(json.container, null);
+        $.shared_name = reader.value(json.shared_name, null);
+        return $;
+    }
+};
+
+$root.tflite.ReadVariableOptions = class ReadVariableOptions {
+
+    static decode(/* reader, position */) {
+        const $ = new $root.tflite.ReadVariableOptions();
+        return $;
+    }
+
+    static decodeText(/* reader, json */) {
+        const $ = new $root.tflite.ReadVariableOptions();
+        return $;
+    }
+};
+
+$root.tflite.AssignVariableOptions = class AssignVariableOptions {
+
+    static decode(/* reader, position */) {
+        const $ = new $root.tflite.AssignVariableOptions();
+        return $;
+    }
+
+    static decodeText(/* reader, json */) {
+        const $ = new $root.tflite.AssignVariableOptions();
+        return $;
+    }
+};
+
+$root.tflite.RandomOptions = class RandomOptions {
+
+    static decode(reader, position) {
+        const $ = new $root.tflite.RandomOptions();
+        $.seed = reader.int64_(position, 4, 0);
+        $.seed2 = reader.int64_(position, 6, 0);
+        return $;
+    }
+
+    static decodeText(reader, json) {
+        const $ = new $root.tflite.RandomOptions();
+        $.seed = reader.value(json.seed, 0);
+        $.seed2 = reader.value(json.seed2, 0);
+        return $;
+    }
+};
+
+$root.tflite.BucketizeOptions = class BucketizeOptions {
+
+    static decode(reader, position) {
+        const $ = new $root.tflite.BucketizeOptions();
+        $.boundaries = reader.typedArray(position, 4, Float32Array);
+        return $;
+    }
+
+    static decodeText(reader, json) {
+        const $ = new $root.tflite.BucketizeOptions();
+        $.boundaries = reader.typedArray(json.boundaries, Float32Array);
+        return $;
+    }
+};
+
 $root.tflite.OperatorCode = class OperatorCode {
 
     static decode(reader, position) {
@@ -2475,8 +2569,9 @@ $root.tflite.SignatureDef = class SignatureDef {
         const $ = new $root.tflite.SignatureDef();
         $.inputs = reader.tableArray(position, 4, $root.tflite.TensorMap.decode);
         $.outputs = reader.tableArray(position, 6, $root.tflite.TensorMap.decode);
-        $.method_name = reader.string_(position, 8, null);
-        $.key = reader.string_(position, 10, null);
+        $.signature_key = reader.string_(position, 8, null);
+        $.deprecated_tag = reader.string_(position, 10, null);
+        $.subgraph_index = reader.uint32_(position, 12, 0);
         return $;
     }
 
@@ -2484,8 +2579,9 @@ $root.tflite.SignatureDef = class SignatureDef {
         const $ = new $root.tflite.SignatureDef();
         $.inputs = reader.objectArray(json.inputs, $root.tflite.TensorMap.decodeText);
         $.outputs = reader.objectArray(json.outputs, $root.tflite.TensorMap.decodeText);
-        $.method_name = reader.value(json.method_name, null);
-        $.key = reader.value(json.key, null);
+        $.signature_key = reader.value(json.signature_key, null);
+        $.deprecated_tag = reader.value(json.deprecated_tag, null);
+        $.subgraph_index = reader.value(json.subgraph_index, 0);
         return $;
     }
 };
@@ -2602,7 +2698,6 @@ $root.tflite.AudioProperties = class AudioProperties {
         const $ = new $root.tflite.AudioProperties();
         $.sample_rate = reader.uint32_(position, 4, 0);
         $.channels = reader.uint32_(position, 6, 0);
-        $.min_required_samples = reader.uint32_(position, 8, 0);
         return $;
     }
 };

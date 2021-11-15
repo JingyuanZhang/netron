@@ -7,12 +7,10 @@ var zip = zip || require('./zip');
 var gzip = gzip || require('./gzip');
 var tar = tar || require('./tar');
 var json = json || require('./json');
+var xml = xml || require('./xml');
 var protobuf = protobuf || require('./protobuf');
+var flatbuffers = flatbuffers || require('./flatbuffers');
 var python = python || require('./python');
-
-var d3 = d3 || require('d3');
-var dagre = dagre || require('dagre');
-
 var sidebar = sidebar || require('./view-sidebar');
 var grapher = grapher || require('./view-grapher');
 
@@ -23,6 +21,7 @@ view.View = class {
         this._id = id ? ('-' + id) : '';
         this._host.initialize(this).then(() => {
             this._model = null;
+            this._graphs = [];
             this._selection = [];
             this._sidebar = new sidebar.Sidebar(this._host, id);
             this._showAttributes = false;
@@ -37,88 +36,31 @@ view.View = class {
             this._getElementById('zoom-out-button').addEventListener('click', () => {
                 this.zoomOut();
             });
-            this._getElementById('sidebar').addEventListener('mousewheel', (e) => {
-                this._preventZoom(e);
+            this._getElementById('back-button').addEventListener('click', () => {
+                this.popGraph();
             });
+            this._getElementById('name-button').addEventListener('click', () => {
+                this.showDocumentation(this.activeGraph);
+            });
+            this._getElementById('sidebar').addEventListener('mousewheel', (e) => {
+                this._preventDefault(e);
+            }, { passive: true });
             this._host.document.addEventListener('keydown', () => {
                 this.clearSelection();
             });
             this._host.start();
-            switch (this._host.environment('zoom')) {
-                case 'scroll': {
-                    const userAgent = navigator.userAgent.toLowerCase();
-                    const safari = userAgent.indexOf('safari') !== -1 && userAgent.indexOf('chrome') === -1;
-                    const elements = [ 'graph', 'toolbar' ];
-                    for (const id of elements) {
-                        const element = this._getElementById(id);
-                        element.addEventListener('mousewheel', (e) => {
-                            this._mouseWheelHandler(e);
-                        });
-                        element.addEventListener('scroll', (e) => {
-                            this._scrollHandler(e);
-                        });
-                        element.addEventListener('wheel', (e) => {
-                            this._mouseWheelHandler(e);
-                        });
-                        if (safari) {
-                            element.addEventListener('gesturestart', (e) => {
-                                e.preventDefault();
-                                this._gestureZoom = this._zoom;
-                            }, false);
-                            element.addEventListener('gesturechange', (e) => {
-                                e.preventDefault();
-                                this._updateZoom(this._gestureZoom * e.scale, e);
-                            }, false);
-                            element.addEventListener('gestureend', (e) => {
-                                e.preventDefault();
-                                this._updateZoom(this._gestureZoom * e.scale, e);
-                            }, false);
-                        }
-                        else {
-                            element.addEventListener('touchstart', (e) => {
-                                if (e.touches.length === 2) {
-                                    this._touchPoints = Array.from(e.touches);
-                                    this._touchZoom = this._zoom;
-                                }
-                            }, { passive: true });
-                            element.addEventListener('touchmove', (e) => {
-                                if (Array.isArray(this._touchPoints) && this._touchPoints.length === 2 && e.touches.length === 2) {
-                                    const distance = (points) => {
-                                        const dx =(points[1].clientX - points[0].clientX);
-                                        const dy =(points[1].clientY - points[0].clientY);
-                                        return Math.sqrt(dx * dx + dy * dy);
-                                    };
-                                    const d1 = distance(Array.from(e.touches));
-                                    const d2 = distance(this._touchPoints);
-                                    if (d2 !== 0) {
-                                        const points = this._touchPoints;
-                                        const e = {
-                                            pageX: (points[1].pageX + points[0].pageX) / 2,
-                                            pageY: (points[1].pageY + points[0].pageY) / 2
-                                        };
-                                        const zoom = d2 === 0 ? d1 : d1 / d2;
-                                        this._updateZoom(this._touchZoom * zoom, e);
-                                    }
-                                }
-                            }, { passive: true });
-                            element.addEventListener('touchcancel', () => {
-                                delete this._touchPoints;
-                                delete this._touchZoom;
-                            }, { passive: true });
-                            element.addEventListener('touchend', () => {
-                                delete this._touchPoints;
-                                delete this._touchZoom;
-                            }, { passive: true });
-                        }
-                    }
+            const element = this._getElementById('graph');
+            element.addEventListener('scroll', (e) => this._scrollHandler(e));
+            element.addEventListener('wheel', (e) => this._wheelHandler(e), { passive: false });
+            // element.addEventListener('mousewheel', (e) => this._wheelHandler(e), { passive: false });
+            element.addEventListener('mousedown', (e) => this._mouseDownHandler(e));
+            switch (this._host.agent) {
+                case 'safari':
+                    element.addEventListener('gesturestart', (e) => this._gestureStartHandler(e), false);
                     break;
-                }
-                case 'd3': {
-                    this._getElementById('toolbar').addEventListener('mousewheel', (e) => {
-                        this._preventZoom(e);
-                    });
+                default:
+                    element.addEventListener('touchstart', (e) => this._touchStartHandler(e), { passive: true });
                     break;
-                }
             }
         }).catch((err) => {
             this.error(err, null, null);
@@ -127,13 +69,30 @@ view.View = class {
 
     show(page) {
         if (!page) {
-            page = (!this._model && !this._activeGraph) ? 'welcome' : 'default';
+            page = (!this._model && !this.activeGraph) ? 'welcome' : 'default';
         }
         this._host.screen(page);
         if (this._sidebar) {
             this._sidebar.close();
         }
         this._host.document.body.setAttribute('class', page);
+        switch (page) {
+            case 'default': {
+                const element = this._getElementById('graph');
+                if (element) {
+                    element.focus();
+                }
+                break;
+            }
+            case 'welcome': {
+                const element = this._getElementById('open-file-button');
+                if (element) {
+                    element.focus();
+                }
+                break;
+            }
+        }
+        this._page = page;
     }
 
     cut() {
@@ -153,20 +112,23 @@ view.View = class {
     }
 
     find() {
-        if (this._activeGraph) {
+        if (this._graph) {
             this.clearSelection();
             const graphElement = this._getElementById('canvas');
-            const view = new sidebar.FindSidebar(this._host, graphElement, this._activeGraph);
+            const view = new sidebar.FindSidebar(this._host, graphElement, this._graph);
             view.on('search-text-changed', (sender, text) => {
                 this._searchText = text;
             });
             view.on('select', (sender, selection) => {
-                this._sidebar.close();
                 this.select(selection);
             });
             this._sidebar.open(view.content, 'Find');
             view.focus(this._searchText);
         }
+    }
+
+    get model() {
+        return this._model;
     }
 
     toggleAttributes() {
@@ -207,8 +169,8 @@ view.View = class {
 
     _reload() {
         this.show('welcome spinner');
-        if (this._model && this._activeGraph) {
-            this._updateGraph(this._model, this._activeGraph).catch((error) => {
+        if (this._model && this._graphs.length > 0) {
+            this._updateGraph(this._model, this._graphs).catch((error) => {
                 if (error) {
                     this.error(error, 'Graph update failed.', 'welcome');
                 }
@@ -227,88 +189,152 @@ view.View = class {
     }
 
     zoomIn() {
-        switch (this._host.environment('zoom')) {
-            case 'scroll':
-                this._updateZoom(this._zoom * 1.1);
-                break;
-            case 'd3':
-                if (this._zoom) {
-                    this._zoom.scaleBy(d3.select(this._getElementById('canvas')), 1.2);
-                }
-                break;
-        }
+        this._updateZoom(this._zoom * 1.1);
     }
 
     zoomOut() {
-        switch (this._host.environment('zoom')) {
-            case 'scroll':
-                this._updateZoom(this._zoom * 0.9);
-                break;
-            case 'd3':
-                if (this._zoom) {
-                    this._zoom.scaleBy(d3.select(this._getElementById('canvas')), 0.8);
-                }
-                break;
-        }
+        this._updateZoom(this._zoom * 0.9);
     }
 
     resetZoom() {
-        switch (this._host.environment('zoom')) {
-            case 'scroll':
-                this._updateZoom(1);
-                break;
-            case 'd3':
-                if (this._zoom) {
-                    this._zoom.scaleTo(d3.select(this._getElementById('canvas')), 1);
-                }
-                break;
-        }
+        this._updateZoom(1);
     }
 
-    _preventZoom(e) {
+    _preventDefault(e) {
         if (e.shiftKey || e.ctrlKey) {
             e.preventDefault();
         }
     }
 
     _updateZoom(zoom, e) {
-
-        const graphElement = this._getElementById('graph');
-
-        const min = Math.min(Math.max(graphElement.clientHeight / this._height, 0.2), 1);
-
-        zoom = Math.min(zoom, 1.4);
-        zoom = Math.max(min, zoom);
-
-        const scrollLeft = this._scrollLeft || graphElement.scrollLeft;
-        const scrollTop = this._scrollTop || graphElement.scrollTop;
-
-        const x = (e ? e.pageX : (graphElement.clientWidth / 2)) + scrollLeft;
-        const y = (e ? e.pageY : (graphElement.clientHeight / 2)) + scrollTop;
-
-        const canvasElement = this._getElementById('canvas');
-        canvasElement.style.width = zoom * this._width;
-        canvasElement.style.height = zoom * this._height;
-
-        this._scrollLeft = ((x * zoom) / this._zoom) - (x - scrollLeft);
-        this._scrollTop = ((y * zoom) / this._zoom) - (y - scrollTop);
-        this._scrollLeft = Math.max(0, this._scrollLeft);
-        this._scrollTop = Math.max(0, this._scrollTop);
-        graphElement.scrollLeft = this._scrollLeft;
-        graphElement.scrollTop = this._scrollTop;
-
+        const graph = this._getElementById('graph');
+        const canvas = this._getElementById('canvas');
+        const limit = this._showHorizontal ?
+            graph.clientWidth / this._width :
+            graph.clientHeight / this._height;
+        const min = Math.min(Math.max(limit, 0.15), 1);
+        zoom = Math.max(min, Math.min(zoom, 1.4));
+        const scrollLeft = this._scrollLeft || graph.scrollLeft;
+        const scrollTop = this._scrollTop || graph.scrollTop;
+        const x = (e ? e.pageX : (graph.clientWidth / 2)) + scrollLeft;
+        const y = (e ? e.pageY : (graph.clientHeight / 2)) + scrollTop;
+        const width = zoom * this._width;
+        const height = zoom * this._height;
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        this._scrollLeft = Math.max(0, ((x * zoom) / this._zoom) - (x - scrollLeft));
+        this._scrollTop = Math.max(0, ((y * zoom) / this._zoom) - (y - scrollTop));
+        graph.scrollLeft = this._scrollLeft;
+        graph.scrollTop = this._scrollTop;
         this._zoom = zoom;
     }
 
-    _mouseWheelHandler(e) {
-        if (e.shiftKey || e.ctrlKey) {
-            this._updateZoom(this._zoom + (e.wheelDelta * 1.0 / 4000.0), e);
-            e.preventDefault();
+    _mouseDownHandler(e) {
+        if (e.buttons === 1) {
+            const document = this._host.document.documentElement;
+            document.style.cursor = 'grabbing';
+            const element = this._getElementById('graph');
+            this._mousePosition = {
+                left: element.scrollLeft,
+                top: element.scrollTop,
+                x: e.clientX,
+                y: e.clientY
+            };
+            e.stopImmediatePropagation();
+            const mouseMoveHandler = (e) => {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                const dx = e.clientX - this._mousePosition.x;
+                const dy = e.clientY - this._mousePosition.y;
+                this._mousePosition.moved = dx * dx + dy * dy > 0;
+                if (this._mousePosition.moved) {
+                    const element = this._getElementById('graph');
+                    element.scrollTop = this._mousePosition.top - dy;
+                    element.scrollLeft = this._mousePosition.left - dx;
+                }
+            };
+            const mouseUpHandler = () => {
+                document.style.cursor = null;
+                element.removeEventListener('mouseup', mouseUpHandler);
+                element.removeEventListener('mouseleave', mouseUpHandler);
+                element.removeEventListener('mousemove', mouseMoveHandler);
+                if (this._mousePosition && this._mousePosition.moved) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    delete this._mousePosition;
+                    document.addEventListener('click', clickHandler, true);
+                }
+            };
+            const clickHandler = (e) => {
+                e.stopPropagation();
+                document.removeEventListener('click', clickHandler, true);
+            };
+            element.addEventListener('mousemove', mouseMoveHandler);
+            element.addEventListener('mouseup', mouseUpHandler);
+            element.addEventListener('mouseleave', mouseUpHandler);
         }
     }
 
-    _scrollHandler(e) {
+    _touchStartHandler(e) {
+        if (e.touches.length === 2) {
+            this._touchPoints = Array.from(e.touches);
+            this._touchZoom = this._zoom;
+        }
+        const touchMoveHandler = (e) => {
+            if (Array.isArray(this._touchPoints) && this._touchPoints.length === 2 && e.touches.length === 2) {
+                const distance = (points) => {
+                    const dx =(points[1].clientX - points[0].clientX);
+                    const dy =(points[1].clientY - points[0].clientY);
+                    return Math.sqrt(dx * dx + dy * dy);
+                };
+                const d1 = distance(Array.from(e.touches));
+                const d2 = distance(this._touchPoints);
+                if (d2 !== 0) {
+                    const points = this._touchPoints;
+                    const e = {
+                        pageX: (points[1].pageX + points[0].pageX) / 2,
+                        pageY: (points[1].pageY + points[0].pageY) / 2
+                    };
+                    const zoom = d2 === 0 ? d1 : d1 / d2;
+                    this._updateZoom(this._touchZoom * zoom, e);
+                }
+            }
+        };
+        const touchEndHandler = () => {
+            element.removeEventListener('touchmove', touchMoveHandler, { passive: true });
+            element.removeEventListener('touchcancel', touchEndHandler, { passive: true });
+            element.removeEventListener('touchend', touchEndHandler, { passive: true });
+            delete this._touchPoints;
+            delete this._touchZoom;
+        };
+        const element = this._getElementById('graph');
+        element.addEventListener('touchmove', touchMoveHandler, { passive: true });
+        element.addEventListener('touchcancel', touchEndHandler, { passive: true });
+        element.addEventListener('touchend', touchEndHandler, { passive: true });
+    }
 
+    _gestureStartHandler(e) {
+        e.preventDefault();
+        this._gestureZoom = this._zoom;
+        const element = this._getElementById('graph');
+        const gestureChangeHandler = (e) => {
+            e.preventDefault();
+            this._updateZoom(this._gestureZoom * e.scale, e);
+        };
+        const gestureEndHandler = (e) => {
+            element.removeEventListener('gesturechange', gestureChangeHandler, false);
+            element.removeEventListener('gestureend', gestureEndHandler, false);
+            e.preventDefault();
+            if (this._gestureZoom) {
+                this._updateZoom(this._gestureZoom * e.scale, e);
+                delete this._gestureZoom;
+            }
+        };
+        element.addEventListener('gesturechange', gestureChangeHandler, false);
+        element.addEventListener('gestureend', gestureEndHandler, false);
+    }
+
+    _scrollHandler(e) {
         if (this._scrollLeft && e.target.scrollLeft !== Math.floor(this._scrollLeft)) {
             delete this._scrollLeft;
         }
@@ -317,50 +343,33 @@ view.View = class {
         }
     }
 
+    _wheelHandler(e) {
+        if (e.shiftKey || e.ctrlKey) {
+            const delta = -e.deltaY * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002) * (e.ctrlKey ? 10 : 1);
+            this._updateZoom(this._zoom * Math.pow(2, delta), e);
+            e.preventDefault();
+        }
+    }
+
     select(selection) {
         this.clearSelection();
         if (selection && selection.length > 0) {
             const graphElement = this._getElementById('graph');
-            switch (this._host.environment('zoom')) {
-                case 'd3': {
-                    let x = 0;
-                    let y = 0;
-                    for (const element of selection) {
-                        element.classList.add('select');
-                        this._selection.push(element);
-                        const transform = element.transform.baseVal.consolidate();
-                        const box = element.getBBox();
-                        const ex = transform ? transform.matrix.e : box.x + (box.width / 2);
-                        const ey = transform ? transform.matrix.f : box.y + (box.height / 2);
-                        x += ex;
-                        y += ey;
-                    }
-                    x = x / selection.length;
-                    y = y / selection.length;
-                    const canvasElement = this._getElementById('canvas');
-                    const canvasRect = canvasElement.getBoundingClientRect();
-                    this._zoom.transform(d3.select(canvasElement), d3.zoomIdentity.translate((canvasRect.width / 2) - x, (canvasRect.height / 2) - y));
-                    break;
-                }
-                case 'scroll': {
-                    let x = 0;
-                    let y = 0;
-                    for (const element of selection) {
-                        element.classList.add('select');
-                        this._selection.push(element);
-                        const rect = element.getBoundingClientRect();
-                        x += rect.left + (rect.width / 2);
-                        y += rect.top + (rect.height / 2);
-                    }
-                    x = x / selection.length;
-                    y = y / selection.length;
-                    const rect = graphElement.getBoundingClientRect();
-                    const left = (graphElement.scrollLeft + x - rect.left) - (rect.width / 2);
-                    const top = (graphElement.scrollTop + y - rect.top) - (rect.height / 2);
-                    graphElement.scrollTo({ left: left, top: top, behavior: 'smooth' });
-                    break;
-                }
+            let x = 0;
+            let y = 0;
+            for (const element of selection) {
+                element.classList.add('select');
+                this._selection.push(element);
+                const rect = element.getBoundingClientRect();
+                x += rect.left + (rect.width / 2);
+                y += rect.top + (rect.height / 2);
             }
+            x = x / selection.length;
+            y = y / selection.length;
+            const rect = graphElement.getBoundingClientRect();
+            const left = (graphElement.scrollLeft + x - rect.left) - (rect.width / 2);
+            const top = (graphElement.scrollTop + y - rect.top) - (rect.height / 2);
+            graphElement.scrollTo({ left: left, top: top, behavior: 'smooth' });
         }
     }
 
@@ -391,17 +400,17 @@ view.View = class {
             { name: 'Error loading model.', message: /^Unsupported Protocol Buffers content/, url: 'https://github.com/lutzroeder/netron/issues/593' },
             { name: 'Error loading model.', message: /^Unsupported Protocol Buffers text content/, url: 'https://github.com/lutzroeder/netron/issues/594' },
             { name: 'Error loading model.', message: /^Unsupported JSON content/, url: 'https://github.com/lutzroeder/netron/issues/595' },
-            { name: 'Error loading Caffe model.', message: /^File format is not caffe.NetParameter (Offset is outside the bounds of the DataView)/, url: 'https://github.com/lutzroeder/netron/issues/563' },
+            { name: 'Error loading Caffe model.', message: /^File format is not caffe\.NetParameter/, url: 'https://github.com/lutzroeder/netron/issues/563' },
             { name: 'Error loading Darknet model.', message: /^Invalid tensor shape/, url: 'https://github.com/lutzroeder/netron/issues/541' },
             { name: 'Error loading Keras model.', message: /^Unsupported data object header version/, url: 'https://github.com/lutzroeder/netron/issues/548' },
-            { name: 'Error loading MNN model.', message: /^Offset is outside the bounds of the DataView/, url: 'https://github.com/lutzroeder/netron/issues/563' },
+            { name: 'Error loading MNN model.', message: /^File format is not mnn\.Net/, url: 'https://github.com/lutzroeder/netron/issues/746' },
             { name: 'Error loading PyTorch model.', message: /^File does not contain root module or state dictionary/, url: 'https://github.com/lutzroeder/netron/issues/543' },
             { name: 'Error loading PyTorch model.', message: /^Module does not contain modules/, url: 'https://github.com/lutzroeder/netron/issues/544' },
             { name: 'Error loading PyTorch model.', message: /^Failed to resolve module/, url: 'https://github.com/lutzroeder/netron/issues/545' },
             { name: 'Error loading PyTorch model.', message: /^Unsupported function/, url: 'https://github.com/lutzroeder/netron/issues/546' },
             { name: 'Error loading PyTorch model.', message: /^Unsupported uninitialized argument/, url: 'https://github.com/lutzroeder/netron/issues/547' },
             { name: 'Error loading ONNX model.', message: /^File format is not onnx\.ModelProto/, url: 'https://github.com/lutzroeder/netron/issues/549' },
-            { name: 'Error loading ONNX model.', message: /^File format is not onnx.ModelProto (Offset is outside the bounds of the DataView)/, url: 'https://github.com/lutzroeder/netron/issues/563' },
+            { name: 'Error loading TensorFlow model.', message: /^File text format is not TensorFlow\.js graph-model/, url: 'https://github.com/lutzroeder/netron/issues/764' },
             { name: 'Error loading TensorFlow Lite model.', message: /^Offset is outside the bounds of the DataView/, url: 'https://github.com/lutzroeder/netron/issues/563' },
             { name: 'Error loading UFF model.', message: /^Unknown attribute/, url: 'https://github.com/lutzroeder/netron/issues/649' }
         ];
@@ -420,17 +429,23 @@ view.View = class {
     }
 
     open(context) {
-        this._host.event('Model', 'Open', 'Size', context.stream.length);
+        this._host.event('Model', 'Open', 'Size', context.stream ? context.stream.length : 0);
         this._sidebar.close();
         return this._timeout(2).then(() => {
             return this._modelFactoryService.open(context).then((model) => {
-                const format = model.format;
-                if (format) {
-                    this._host.event('Model', 'Format', format + (model.producer ? ' (' + model.producer + ')' : ''));
+                const format = [];
+                if (model.format) {
+                    format.push(model.format);
+                }
+                if (model.producer) {
+                    format.push('(' + model.producer + ')');
+                }
+                if (format.length > 0) {
+                    this._host.event('Model', 'Format', format.join(' '));
                 }
                 return this._timeout(20).then(() => {
-                    const graph = model.graphs.length > 0 ? model.graphs[0] : null;
-                    return this._updateGraph(model, graph);
+                    const graphs = Array.isArray(model.graphs) && model.graphs.length > 0 ? [ model.graphs[0] ] : [];
+                    return this._updateGraph(model, graphs);
                 });
             });
         });
@@ -444,7 +459,7 @@ view.View = class {
             if (graph) {
                 this.show('welcome spinner');
                 this._timeout(200).then(() => {
-                    return this._updateGraph(model, graph).catch((error) => {
+                    return this._updateGraph(model, [ graph ]).catch((error) => {
                         if (error) {
                             this.error(error, 'Graph update failed.', 'welcome');
                         }
@@ -454,11 +469,36 @@ view.View = class {
         }
     }
 
-    _updateGraph(model, graph) {
+    get activeGraph() {
+        return Array.isArray(this._graphs) && this._graphs.length > 0 ? this._graphs[0] : null;
+    }
+
+    _updateGraph(model, graphs) {
+        const update = () => {
+            const nameButton = this._getElementById('name-button');
+            const backButton = this._getElementById('back-button');
+            if (this._graphs.length > 1) {
+                // backButton.style.display = 'block';
+                // nameButton.style.display = 'block';
+                const graph = this.activeGraph;
+                nameButton.innerHTML = graph ? graph.name : '';
+                backButton.style.opacity = 1;
+                nameButton.style.opacity = 1;
+            }
+            else {
+                backButton.style.opacity = 0;
+                nameButton.style.opacity = 0;
+            }
+        };
+        const previousModel = model;
+        const previousGraphs = graphs;
+        this._model = model;
+        this._graphs = graphs;
+        const graph = this.activeGraph;
         return this._timeout(100).then(() => {
-            if (graph && graph != this._activeGraph) {
+            if (graph && graph != this._graphs[0]) {
                 const nodes = graph.nodes;
-                if (nodes.length > 1400) {
+                if (nodes.length > 2048) {
                     if (!this._host.confirm('Large model detected.', 'This graph contains a large number of nodes and might take a long time to render. Do you want to continue?')) {
                         this._host.event('Graph', 'Render', 'Skip', nodes.length);
                         this.show(null);
@@ -466,74 +506,77 @@ view.View = class {
                     }
                 }
             }
-            return this.renderGraph(model, graph).then(() => {
-                this._model = model;
-                this._activeGraph = graph;
-                this.show('default');
+            return this.renderGraph(this._model, this.activeGraph).then(() => {
+                if (this._page !== 'default') {
+                    this.show('default');
+                }
+                update();
                 return this._model;
             }).catch((error) => {
-                return this.renderGraph(this._model, this._activeGraph).then(() => {
-                    this.show('default');
-                    throw error;
-                }).catch(() => {
+                this._model = previousModel;
+                this._graphs = previousGraphs;
+                return this.renderGraph(this._model, this.activeGraph).then(() => {
+                    if (this._page !== 'default') {
+                        this.show('default');
+                    }
+                    update();
                     throw error;
                 });
             });
         });
     }
 
+    pushGraph(graph) {
+        if (graph !== this.activeGraph) {
+            this._sidebar.close();
+            this._updateGraph(this._model, [ graph ].concat(this._graphs));
+        }
+    }
+
+    popGraph() {
+        if (this._graphs.length > 1) {
+            this._sidebar.close();
+            return this._updateGraph(this._model, this._graphs.slice(1));
+        }
+    }
+
     renderGraph(model, graph) {
         try {
-            const graphElement = this._getElementById('graph');
-            const canvasElement = this._getElementById('canvas');
-            while (canvasElement.lastChild) {
-                canvasElement.removeChild(canvasElement.lastChild);
+            this._graph = null;
+
+            const container = this._getElementById('graph');
+            const canvas = this._getElementById('canvas');
+            while (canvas.lastChild) {
+                canvas.removeChild(canvas.lastChild);
             }
             if (!graph) {
                 return Promise.resolve();
             }
             else {
-                switch (this._host.environment('zoom')) {
-                    case 'scroll':
-                        this._zoom = 1;
-                        canvasElement.style.position = 'static';
-                        canvasElement.style.margin = 'auto';
-                        break;
-                    case 'd3':
-                        this._zoom = null;
-                        canvasElement.style.position = 'absolute';
-                        canvasElement.style.margin = '0';
-                        break;
-                }
+                this._zoom = 1;
+                canvas.style.position = 'static';
+                canvas.style.margin = 'auto';
 
                 const groups = graph.groups;
+                const nodes = graph.nodes;
+                this._host.event('Graph', 'Render', 'Size', nodes.length);
 
-                const graphOptions = {};
-                graphOptions.nodesep = 25;
-                graphOptions.ranksep = 20;
-
+                const options = {};
+                options.nodesep = 20;
+                options.ranksep = 20;
                 const rotate = graph.nodes.every((node) => node.inputs.filter((input) => input.arguments.every((argument) => !argument.initializer)).length === 0 && node.outputs.length === 0);
                 const showHorizontal = rotate ? !this._showHorizontal : this._showHorizontal;
                 if (showHorizontal) {
-                    graphOptions.rankdir = "LR";
+                    options.rankdir = "LR";
+                }
+                if (nodes.length > 3000) {
+                    options.ranker = 'longest-path';
                 }
 
-                const g = new dagre.graphlib.Graph({ compound: groups });
-                g.setGraph(graphOptions);
-                g.setDefaultEdgeLabel(() => { return {}; });
+                const viewGraph = new view.Graph(this, model, groups, options);
 
-                let nodeId = 0;
-                const edgeMap = {};
-                const clusterMap = {};
-                const clusterParentMap = {};
-                let counter = 0;
-                const nodes = graph.nodes;
-
-                if (nodes.length > 1500) {
-                    graphOptions.ranker = 'longest-path';
-                }
-
-                this._host.event('Graph', 'Render', 'Size', nodes.length);
+                const clusters = new Set();
+                const clusterParentMap = new Map();
 
                 if (groups) {
                     for (const node of nodes) {
@@ -542,202 +585,56 @@ view.View = class {
                             while (path.length > 0) {
                                 const name = path.join('/');
                                 path.pop();
-                                clusterParentMap[name] = path.join('/');
+                                clusterParentMap.set(name, path.join('/'));
                             }
                         }
                     }
                 }
 
-                const self = this;
                 for (const node of nodes) {
 
-                    const element = new grapher.NodeElement(this._host.document);
+                    const viewNode = viewGraph.createNode(node);
 
-                    const addNode = function(element, node, edges) {
-
-                        const header =  element.block('header');
-                        const styles = [ 'node-item-type' ];
-                        const metadata = node.metadata;
-                        const category = metadata && metadata.category ? metadata.category : '';
-                        if (category) {
-                            styles.push('node-item-type-' + category.toLowerCase());
-                        }
-                        const type = node.type;
-                        if (typeof type !== 'string' || !type.split) { // #416
-                            throw new view.Error("Unknown node type '" + JSON.stringify(type) + "' in '" + model.format + "'.");
-                        }
-                        const content = self.showNames && (node.name || node.location) ? (node.name || node.location) : type.split('.').pop();
-                        const tooltip = self.showNames && (node.name || node.location) ? type : (node.name || node.location);
-                        header.add(null, styles, content, tooltip, () => {
-                            self.showNodeProperties(node, null);
-                        });
-
-                        if (node.function) {
-                            header.add(null, [ 'node-item-function' ], '+', null, () => {
-                                // debugger;
-                            });
-                        }
-
-                        const initializers = [];
-                        let hiddenInitializers = false;
-                        if (self._showInitializers) {
-                            for (const input of node.inputs) {
-                                if (input.visible && input.arguments.length === 1 && input.arguments[0].initializer != null) {
-                                    initializers.push(input);
-                                }
-                                if ((!input.visible || input.arguments.length > 1) &&
-                                    input.arguments.some((argument) => argument.initializer != null)) {
-                                    hiddenInitializers = true;
-                                }
+                    const inputs = node.inputs;
+                    for (const input of inputs) {
+                        for (const argument of input.arguments) {
+                            if (argument.name != '' && !argument.initializer) {
+                                viewGraph.createArgument(argument).to(viewNode);
                             }
                         }
-                        let sortedAttributes = [];
-                        const attributes = node.attributes;
-                        if (self.showAttributes && attributes) {
-                            sortedAttributes = attributes.filter((attribute) => attribute.visible).slice();
-                            sortedAttributes.sort((a, b) => {
-                                const au = a.name.toUpperCase();
-                                const bu = b.name.toUpperCase();
-                                return (au < bu) ? -1 : (au > bu) ? 1 : 0;
-                            });
+                    }
+                    let outputs = node.outputs;
+                    if (node.chain && node.chain.length > 0) {
+                        const chainOutputs = node.chain[node.chain.length - 1].outputs;
+                        if (chainOutputs.length > 0) {
+                            outputs = chainOutputs;
                         }
-                        if (initializers.length > 0 || hiddenInitializers || sortedAttributes.length > 0) {
-                            const block = element.block('list');
-                            block.handler = () => {
-                                self.showNodeProperties(node);
-                            };
-                            for (const initializer of initializers) {
-                                const argument = initializer.arguments[0];
-                                const type = argument.type;
-                                let shape = '';
-                                let separator = '';
-                                if (type &&
-                                    type.shape &&
-                                    type.shape.dimensions &&
-                                    Object.prototype.hasOwnProperty.call(type.shape.dimensions, 'length')) {
-                                    shape = '\u3008' + type.shape.dimensions.map((d) => d ? d : '?').join('\u00D7') + '\u3009';
-                                    if (type.shape.dimensions.length === 0 && argument.initializer && !argument.initializer.state) {
-                                        try {
-                                            shape = argument.initializer.toString();
-                                            if (shape && shape.length > 10) {
-                                                shape = shape.substring(0, 10) + '\u2026';
-                                            }
-                                            separator = ' = ';
-                                        }
-                                        catch (err) {
-                                            let type = '?';
-                                            try {
-                                                type = argument.initializer.type.toString();
-                                            }
-                                            catch (error) {
-                                                // continue regardless of error
-                                            }
-                                            throw new view.Error("Failed to render tensor of type '" + type + "' in format '" + model.format + "' (" + err.message + ").");
-                                        }
-                                    }
-                                }
-                                block.add(argument.name ? 'initializer-' + argument.name : '', initializer.name, shape, type ? type.toString() : '', separator);
+                    }
+                    for (const output of outputs) {
+                        for (const argument of output.arguments) {
+                            if (!argument) {
+                                throw new view.Error("Invalid null argument in '" + model.identifier + "'.");
                             }
-                            if (hiddenInitializers) {
-                                block.add(null, '\u3008' + '\u2026' + '\u3009', '', null, '');
+                            if (argument.name != '') {
+                                viewGraph.createArgument(argument).from(viewNode);
                             }
-
-                            for (const attribute of sortedAttributes) {
-                                if (attribute.visible) {
-                                    let attributeValue = sidebar.NodeSidebar.formatAttributeValue(attribute.value, attribute.type);
-                                    if (attributeValue && attributeValue.length > 25) {
-                                        attributeValue = attributeValue.substring(0, 25) + '\u2026';
-                                    }
-                                    block.add(null, attribute.name, attributeValue, attribute.type, ' = ');
-                                }
-                            }
-                        }
-
-                        if (edges) {
-                            const inputs = node.inputs;
-                            for (const input of inputs) {
-                                for (const argument of input.arguments) {
-                                    if (argument.name != '' && !argument.initializer) {
-                                        let tuple = edgeMap[argument.name];
-                                        if (!tuple) {
-                                            tuple = { from: null, to: [] };
-                                            edgeMap[argument.name] = tuple;
-                                        }
-                                        tuple.to.push({
-                                            node: nodeId,
-                                            name: input.name
-                                        });
-                                    }
-                                }
-                            }
-                            let outputs = node.outputs;
-                            if (node.chain && node.chain.length > 0) {
-                                const chainOutputs = node.chain[node.chain.length - 1].outputs;
-                                if (chainOutputs.length > 0) {
-                                    outputs = chainOutputs;
-                                }
-                            }
-                            for (const output of outputs) {
-                                for (const argument of output.arguments) {
-                                    if (!argument) {
-                                        throw new view.Error("Invalid null argument in '" + model.format + "'.");
-                                    }
-                                    if (argument.name != '') {
-                                        let tuple = edgeMap[argument.name];
-                                        if (!tuple) {
-                                            tuple = { from: null, to: [] };
-                                            edgeMap[argument.name] = tuple;
-                                        }
-                                        tuple.from = {
-                                            node: nodeId,
-                                            name: output.name,
-                                            type: argument.type
-                                        };
-                                    }
-                                }
-                            }
-                        }
-
-                        if (node.chain && node.chain.length > 0) {
-                            for (const innerNode of node.chain) {
-                                addNode(element, innerNode, false);
-                            }
-                        }
-
-                        if (node.inner) {
-                            addNode(element, node.inner, false);
-                        }
-                    };
-
-                    addNode(element, node, true);
-
-                    if (node.controlDependencies && node.controlDependencies.length > 0) {
-                        for (const controlDependency of node.controlDependencies) {
-                            let tuple = edgeMap[controlDependency];
-                            if (!tuple) {
-                                tuple = { from: null, to: [] };
-                                edgeMap[controlDependency] = tuple;
-                            }
-                            tuple.to.push({
-                                node: nodeId,
-                                name: controlDependency,
-                                controlDependency: true
-                            });
                         }
                     }
 
-                    const nodeName = node.name;
-                    const id = 'node-' + (nodeName ? 'name-' + nodeName : 'id-' + (counter++).toString());
-                    g.setNode(nodeId, { label: element.format(canvasElement), id: id, class: 'graph-node' });
+                    if (node.controlDependencies && node.controlDependencies.length > 0) {
+                        for (const argument of node.controlDependencies) {
+                            viewGraph.createArgument(argument).to(viewNode, true);
+                        }
+                    }
 
                     const createCluster = function(name) {
-                        if (!clusterMap[name]) {
-                            g.setNode(name, { rx: 5, ry: 5});
-                            clusterMap[name] = true;
-                            const parent = clusterParentMap[name];
+                        if (!clusters.has(name)) {
+                            viewGraph.setNode({ name: name, rx: 5, ry: 5});
+                            clusters.add(name);
+                            const parent = clusterParentMap.get(name);
                             if (parent) {
                                 createCluster(parent);
-                                g.setParent(name, parent);
+                                viewGraph.setParent(name, parent);
                             }
                         }
                     };
@@ -745,11 +642,11 @@ view.View = class {
                     if (groups) {
                         let groupName = node.group;
                         if (groupName && groupName.length > 0) {
-                            if (!Object.prototype.hasOwnProperty.call(clusterParentMap, groupName)) {
+                            if (!clusterParentMap.has(groupName)) {
                                 const lastIndex = groupName.lastIndexOf('/');
                                 if (lastIndex != -1) {
                                     groupName = groupName.substring(0, lastIndex);
-                                    if (!Object.prototype.hasOwnProperty.call(clusterParentMap, groupName)) {
+                                    if (!clusterParentMap.has(groupName)) {
                                         groupName = null;
                                     }
                                 }
@@ -759,214 +656,105 @@ view.View = class {
                             }
                             if (groupName) {
                                 createCluster(groupName);
-                                g.setParent(nodeId, groupName);
+                                viewGraph.setParent(viewNode.name, groupName);
                             }
                         }
                     }
-
-                    nodeId++;
                 }
 
                 for (const input of graph.inputs) {
+                    const viewInput = viewGraph.createInput(input);
                     for (const argument of input.arguments) {
-                        let tuple = edgeMap[argument.name];
-                        if (!tuple) {
-                            tuple = { from: null, to: [] };
-                            edgeMap[argument.name] = tuple;
-                        }
-                        tuple.from = {
-                            node: nodeId,
-                            type: argument.type
-                        };
+                        viewGraph.createArgument(argument).from(viewInput);
                     }
-                    const types = input.arguments.map((argument) => argument.type || '').join('\n');
-                    let inputName = input.name || '';
-                    if (inputName.length > 16) {
-                        inputName = inputName.split('/').pop();
-                    }
-
-                    const inputElement = new grapher.NodeElement(this._host.document);
-                    const inputHeader = inputElement.block('header');
-                    inputHeader.add(null, [ 'graph-item-input' ], inputName, types, () => {
-                        this.showModelProperties();
-                    });
-                    const id = 'input-' + (inputName ? 'name-' + inputName : 'id-' + (counter++).toString());
-                    g.setNode(nodeId++, { label: inputElement.format(canvasElement), id: id, class: 'graph-input' } );
                 }
 
                 for (const output of graph.outputs) {
+                    const viewOutput = viewGraph.createOutput(output);
                     for (const argument of output.arguments) {
-                        let tuple = edgeMap[argument.name];
-                        if (!tuple) {
-                            tuple = { from: null, to: [] };
-                            edgeMap[argument.name] = tuple;
-                        }
-                        tuple.to.push({ node: nodeId });
-                    }
-                    const outputTypes = output.arguments.map((argument) => argument.type || '').join('\n');
-                    let outputName = output.name || '';
-                    if (outputName.length > 16) {
-                        outputName = outputName.split('/').pop();
-                    }
-
-                    const outputElement = new grapher.NodeElement(this._host.document);
-                    const outputHeader = outputElement.block('header');
-                    outputHeader.add(null, [ 'graph-item-output' ], outputName, outputTypes, () => {
-                        this.showModelProperties();
-                    });
-                    g.setNode(nodeId++, { label: outputElement.format(canvasElement) } );
-                }
-
-                for (const edge of Object.keys(edgeMap)) {
-                    const tuple = edgeMap[edge];
-                    if (tuple.from != null) {
-                        for (const to of tuple.to) {
-                            let text = '';
-                            const type = tuple.from.type;
-                            if (type && type.shape && type.shape.dimensions && type.shape.dimensions.length > 0) {
-                                text = type.shape.dimensions.map((dimension) => dimension || '?').join('\u00D7');
-                            }
-
-                            if (this._showNames) {
-                                text = edge.split('\n').shift(); // custom argument id
-                            }
-
-                            if (to.controlDependency) {
-                                g.setEdge(tuple.from.node, to.node, { label: text, id: 'edge-' + edge, arrowhead: 'vee', class: 'edge-path-control-dependency' } );
-                            }
-                            else {
-                                g.setEdge(tuple.from.node, to.node, { label: text, id: 'edge-' + edge, arrowhead: 'vee' } );
-                            }
-                        }
+                        viewGraph.createArgument(argument).to(viewOutput);
                     }
                 }
 
                 // Workaround for Safari background drag/zoom issue:
                 // https://stackoverflow.com/questions/40887193/d3-js-zoom-is-not-working-with-mousewheel-in-safari
-                const backgroundElement = this._host.document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                backgroundElement.setAttribute('id', 'background');
-                if (this._host.environment('zoom') === 'd3') {
-                    backgroundElement.setAttribute('width', '100%');
-                    backgroundElement.setAttribute('height', '100%');
-                }
-                backgroundElement.setAttribute('fill', 'none');
-                backgroundElement.setAttribute('pointer-events', 'all');
-                canvasElement.appendChild(backgroundElement);
+                const background = this._host.document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                background.setAttribute('id', 'background');
+                background.setAttribute('fill', 'none');
+                background.setAttribute('pointer-events', 'all');
+                canvas.appendChild(background);
 
-                const originElement = this._host.document.createElementNS('http://www.w3.org/2000/svg', 'g');
-                originElement.setAttribute('id', 'origin');
-                canvasElement.appendChild(originElement);
+                const origin = this._host.document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                origin.setAttribute('id', 'origin');
+                canvas.appendChild(origin);
 
-                let svg = null;
-                switch (this._host.environment('zoom')) {
-                    case 'd3': {
-                        svg = d3.select(canvasElement);
-                        this._zoom = d3.zoom();
-                        this._zoom(svg);
-                        this._zoom.scaleExtent([ 0.1, 1.4 ]);
-                        this._zoom.on('zoom', (event) => {
-                            originElement.setAttribute('transform', event.transform.toString());
-                        });
-                        this._zoom.transform(svg, d3.zoomIdentity);
-                        break;
-                    }
-                    case 'scroll': {
-                        this._zoom = 1;
-                        break;
-                    }
-                }
+                viewGraph.build(this._host.document, origin);
+
+                this._zoom = 1;
 
                 return this._timeout(20).then(() => {
 
-                    const graphRenderer = new grapher.Renderer(this._host.document, originElement);
-                    graphRenderer.render(g);
+                    viewGraph.layout();
 
-                    const elements = Array.from(canvasElement.getElementsByClassName('graph-input') || []);
+                    const elements = Array.from(canvas.getElementsByClassName('graph-input') || []);
                     if (elements.length === 0) {
-                        const nodeElements = Array.from(canvasElement.getElementsByClassName('graph-node') || []);
+                        const nodeElements = Array.from(canvas.getElementsByClassName('graph-node') || []);
                         if (nodeElements.length > 0) {
                             elements.push(nodeElements[0]);
                         }
                     }
 
-                    switch (this._host.environment('zoom')) {
-                        case 'd3': {
-                            const svgSize = canvasElement.getBoundingClientRect();
-                            if (elements && elements.length > 0) {
-                                // Center view based on input elements
-                                const xs = [];
-                                const ys = [];
-                                for (let i = 0; i < elements.length; i++) {
-                                    const inputTransform = elements[i].transform.baseVal.consolidate().matrix;
-                                    xs.push(inputTransform.e);
-                                    ys.push(inputTransform.f);
-                                }
-                                let x = xs[0];
-                                const y = ys[0];
-                                if (ys.every(y => y === ys[0])) {
-                                    x = xs.reduce((a,b) => { return a + b; }) / xs.length;
-                                }
-                                const sx = (svgSize.width / (this._showHorizontal ? 4 : 2)) - x;
-                                const sy = (svgSize.height / (this._showHorizontal ? 2 : 4)) - y;
-                                this._zoom.transform(svg, d3.zoomIdentity.translate(sx, sy));
-                            }
-                            else {
-                                this._zoom.transform(svg, d3.zoomIdentity.translate((svgSize.width - g.graph().width) / 2, (svgSize.height - g.graph().height) / 2));
-                            }
-                            break;
-                        }
-                        case 'scroll': {
-                            const size = canvasElement.getBBox();
-                            const margin = 100;
-                            const width = Math.ceil(margin + size.width + margin);
-                            const height = Math.ceil(margin + size.height + margin);
-                            originElement.setAttribute('transform', 'translate(' + margin.toString() + ', ' + margin.toString() + ') scale(1)');
-                            backgroundElement.setAttribute('width', width);
-                            backgroundElement.setAttribute('height', height);
-                            this._width = width;
-                            this._height = height;
-                            this._zoom = 1;
-                            delete this._scrollLeft;
-                            delete this._scrollRight;
-                            canvasElement.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
-                            canvasElement.setAttribute('width', width);
-                            canvasElement.setAttribute('height', height);
+                    const size = canvas.getBBox();
+                    const margin = 100;
+                    const width = Math.ceil(margin + size.width + margin);
+                    const height = Math.ceil(margin + size.height + margin);
+                    origin.setAttribute('transform', 'translate(' + margin.toString() + ', ' + margin.toString() + ') scale(1)');
+                    background.setAttribute('width', width);
+                    background.setAttribute('height', height);
+                    this._width = width;
+                    this._height = height;
+                    delete this._scrollLeft;
+                    delete this._scrollRight;
+                    canvas.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+                    canvas.setAttribute('width', width);
+                    canvas.setAttribute('height', height);
 
-                            this._updateZoom(this._zoom);
+                    this._zoom = 1;
+                    this._updateZoom(this._zoom);
 
-                            if (elements && elements.length > 0) {
-                                // Center view based on input elements
-                                const xs = [];
-                                const ys = [];
-                                for (let i = 0; i < elements.length; i++) {
-                                    const element = elements[i];
-                                    const rect = element.getBoundingClientRect();
-                                    xs.push(rect.left + (rect.width / 2));
-                                    ys.push(rect.top + (rect.height / 2));
-                                }
-                                let x = xs[0];
-                                const y = ys[0];
-                                if (ys.every(y => y === ys[0])) {
-                                    x = xs.reduce((a,b) => { return a + b; }) / xs.length;
-                                }
-                                // const canvasRect = graphElement.getBoundingClientRect();
-                                const graphRect = graphElement.getBoundingClientRect();
-                                // const sx = (canvasRect.width / (this._showHorizontal ? 4 : 2)) - x;
-                                // const sy = (canvasRect.height / (this._showHorizontal ? 2 : 4)) - y;
-                                const left = (graphElement.scrollLeft + x - graphRect.left) - (graphRect.width / 2);
-                                const top = (graphElement.scrollTop + y - graphRect.top) - (graphRect.height / 2);
-                                graphElement.scrollTo({ left: left, top: top, behavior: 'auto' });
-                            }
-                            else {
-                                const canvasRect = graphElement.getBoundingClientRect();
-                                const graphRect = graphElement.getBoundingClientRect();
-                                const left = (graphElement.scrollLeft + (canvasRect.width / 2) - graphRect.left) - (graphRect.width / 2);
-                                const top = (graphElement.scrollTop + (canvasRect.height / 2) - graphRect.top) - (graphRect.height / 2);
-                                graphElement.scrollTo({ left: left, top: top, behavior: 'auto' });
-                            }
-                            break;
+                    if (elements && elements.length > 0) {
+                        // Center view based on input elements
+                        const xs = [];
+                        const ys = [];
+                        for (let i = 0; i < elements.length; i++) {
+                            const element = elements[i];
+                            const rect = element.getBoundingClientRect();
+                            xs.push(rect.left + (rect.width / 2));
+                            ys.push(rect.top + (rect.height / 2));
                         }
+                        let x = xs[0];
+                        const y = ys[0];
+                        if (ys.every(y => y === ys[0])) {
+                            x = xs.reduce((a, b) => a + b, 0) / xs.length;
+                        }
+                        // const canvasRect = graphElement.getBoundingClientRect();
+                        const graphRect = container.getBoundingClientRect();
+                        // const sx = (canvasRect.width / (this._showHorizontal ? 4 : 2)) - x;
+                        // const sy = (canvasRect.height / (this._showHorizontal ? 2 : 4)) - y;
+                        const left = (container.scrollLeft + x - graphRect.left) - (graphRect.width / 2);
+                        const top = (container.scrollTop + y - graphRect.top) - (graphRect.height / 2);
+                        container.scrollTo({ left: left, top: top, behavior: 'auto' });
                     }
+                    else {
+                        const canvasRect = canvas.getBoundingClientRect();
+                        const graphRect = container.getBoundingClientRect();
+                        const left = (container.scrollLeft + (canvasRect.width / 2) - graphRect.left) - (graphRect.width / 2);
+                        const top = (container.scrollTop + (canvasRect.height / 2) - graphRect.top) - (graphRect.height / 2);
+                        container.scrollTo({ left: left, top: top, behavior: 'auto' });
+                    }
+
+                    this._graph = viewGraph;
+
                     return;
                 });
             }
@@ -978,21 +766,17 @@ view.View = class {
 
     applyStyleSheet(element, name) {
         let rules = [];
-        for (let i = 0; i < this._host.document.styleSheets.length; i++) {
-            const styleSheet = this._host.document.styleSheets[i];
+        for (const styleSheet of this._host.document.styleSheets) {
             if (styleSheet && styleSheet.href && styleSheet.href.endsWith('/' + name)) {
                 rules = styleSheet.cssRules;
                 break;
             }
         }
         const nodes = element.getElementsByTagName('*');
-        for (let j = 0; j < nodes.length; j++) {
-            const node = nodes[j];
-            for (let k = 0; k < rules.length; k++) {
-                const rule = rules[k];
+        for (const node of nodes) {
+            for (const rule of rules) {
                 if (node.matches(rule.selectorText)) {
-                    for (let l = 0; l < rule.style.length; l++) {
-                        const item = rule.style.item(l);
+                    for (const item of rule.style) {
                         node.style[item] = rule.style[item];
                     }
                 }
@@ -1003,7 +787,7 @@ view.View = class {
     export(file) {
         const lastIndex = file.lastIndexOf('.');
         const extension = (lastIndex != -1) ? file.substring(lastIndex + 1) : '';
-        if (this._activeGraph && (extension === 'png' || extension === 'svg')) {
+        if (this.activeGraph && (extension === 'png' || extension === 'svg')) {
             const graphElement = this._getElementById('canvas');
             const exportElement = graphElement.cloneNode(true);
             this.applyStyleSheet(exportElement, 'view-grapher.css');
@@ -1073,78 +857,415 @@ view.View = class {
 
     showModelProperties() {
         if (this._model) {
-            const modelSidebar = new sidebar.ModelSidebar(this._host, this._model, this._activeGraph);
-            modelSidebar.on('update-active-graph', (sender, name) => {
-                this._updateActiveGraph(name);
-            });
-            this._sidebar.open(modelSidebar.render(), 'Model Properties');
+            try {
+                const modelSidebar = new sidebar.ModelSidebar(this._host, this._model, this.activeGraph);
+                modelSidebar.on('update-active-graph', (sender, name) => {
+                    this._updateActiveGraph(name);
+                });
+                const content = modelSidebar.render();
+                this._sidebar.open(content, 'Model Properties');
+            }
+            catch (error) {
+                const content = " in '" + this._model.identifier + "'.";
+                if (error && !error.message.endsWith(content) && (error.context === undefined || error.context === true)) {
+                    error.message = error.message.replace(/\.$/, '') + content;
+                }
+                this.error(error, 'Error showing model properties.', null);
+            }
         }
     }
 
     showNodeProperties(node, input) {
         if (node) {
-            const nodeSidebar = new sidebar.NodeSidebar(this._host, node);
-            nodeSidebar.on('show-documentation', (/* sender, e */) => {
-                this.showNodeDocumentation(node);
-            });
-            nodeSidebar.on('export-tensor', (sender, tensor) => {
-                this._host.require('./numpy').then((numpy) => {
-                    const defaultPath = tensor.name ? tensor.name.split('/').join('_').split(':').join('_').split('.').join('_') : 'tensor';
-                    this._host.save('NumPy Array', 'npy', defaultPath, (file) => {
-                        try {
-                            const dataTypeMap = new Map([
-                                [ 'float16', 'f2' ], [ 'float32', 'f4' ], [ 'float64', 'f8' ],
-                                [ 'int8', 'i1' ], [ 'int16', 'i2'], [ 'int32', 'i4' ], [ 'int64', 'i8' ],
-                                [ 'uint8', 'u1' ], [ 'uint16', 'u2' ], [ 'uint32', 'u4' ], [ 'uint64', 'u8' ],
-                                [ 'qint8', 'i1' ], [ 'qint16', 'i2' ],
-                                [ 'quint8', 'u1' ], [ 'quint16', 'u2' ]
-                            ]);
-                            const array = new numpy.Array();
-                            array.shape = tensor.type.shape.dimensions;
-                            array.data = tensor.value;
-                            array.dataType = dataTypeMap.has(tensor.type.dataType) ? dataTypeMap.get(tensor.type.dataType) : tensor.type.dataType;
-                            const blob = new Blob([ array.toBuffer() ], { type: 'application/octet-stream' });
-                            this._host.export(file, blob);
-                        }
-                        catch (error) {
-                            this.error(error, 'Error saving NumPy tensor.', null);
-                        }
-                    });
-                }).catch(() => {
+            try {
+                const nodeSidebar = new sidebar.NodeSidebar(this._host, node);
+                nodeSidebar.on('show-documentation', (/* sender, e */) => {
+                    this.showDocumentation(node.type);
                 });
-            });
-            nodeSidebar.on('error', (sender, error) => {
-                if (this._model) {
-                    error.message = error.message.replace(/\.$/, '') + " in format '" + this._model.format + "'.";
+                nodeSidebar.on('show-graph', (sender, graph) => {
+                    this.pushGraph(graph);
+                });
+                nodeSidebar.on('export-tensor', (sender, tensor) => {
+                    this._host.require('./numpy').then((numpy) => {
+                        const defaultPath = tensor.name ? tensor.name.split('/').join('_').split(':').join('_').split('.').join('_') : 'tensor';
+                        this._host.save('NumPy Array', 'npy', defaultPath, (file) => {
+                            try {
+                                const dataTypeMap = new Map([
+                                    [ 'float16', 'f2' ], [ 'float32', 'f4' ], [ 'float64', 'f8' ],
+                                    [ 'int8', 'i1' ], [ 'int16', 'i2'], [ 'int32', 'i4' ], [ 'int64', 'i8' ],
+                                    [ 'uint8', 'u1' ], [ 'uint16', 'u2' ], [ 'uint32', 'u4' ], [ 'uint64', 'u8' ],
+                                    [ 'qint8', 'i1' ], [ 'qint16', 'i2' ],
+                                    [ 'quint8', 'u1' ], [ 'quint16', 'u2' ]
+                                ]);
+                                const array = new numpy.Array();
+                                array.shape = tensor.type.shape.dimensions;
+                                array.data = tensor.value;
+                                array.dataType = dataTypeMap.has(tensor.type.dataType) ? dataTypeMap.get(tensor.type.dataType) : tensor.type.dataType;
+                                const blob = new Blob([ array.toBuffer() ], { type: 'application/octet-stream' });
+                                this._host.export(file, blob);
+                            }
+                            catch (error) {
+                                this.error(error, 'Error saving NumPy tensor.', null);
+                            }
+                        });
+                    }).catch(() => {
+                    });
+                });
+                nodeSidebar.on('error', (sender, error) => {
+                    if (this._model) {
+                        error.message = error.message.replace(/\.$/, '') + " in '" + this._model.identifier + "'.";
+                    }
+                    this.error(error, null, null);
+                });
+                if (input) {
+                    nodeSidebar.toggleInput(input.name);
                 }
-                this.error(error, null, null);
-            });
-            if (input) {
-                nodeSidebar.toggleInput(input.name);
+                this._sidebar.open(nodeSidebar.render(), 'Node Properties');
             }
-            this._sidebar.open(nodeSidebar.render(), 'Node Properties');
+            catch (error) {
+                const content = " in '" + this._model.identifier + "'.";
+                if (error && !error.message.endsWith(content) && (error.context === undefined || error.context === true)) {
+                    error.message = error.message.replace(/\.$/, '') + content;
+                }
+                this.error(error, 'Error showing node properties.', null);
+            }
         }
     }
 
-    showNodeDocumentation(node) {
-        const metadata = node.metadata;
-        if (metadata) {
-            const documentationSidebar = new sidebar.DocumentationSidebar(this._host, metadata);
+    showDocumentation(type) {
+        if (type && (type.description || type.inputs || type.outputs || type.attributes)) {
+            if (type.nodes) {
+                this.pushGraph(type);
+            }
+            const documentationSidebar = new sidebar.DocumentationSidebar(this._host, type);
             documentationSidebar.on('navigate', (sender, e) => {
                 this._host.openURL(e.link);
             });
-            this._sidebar.push(documentationSidebar.render(), 'Documentation');
+            const title = type.type === 'function' ? 'Function' : 'Documentation';
+            this._sidebar.push(documentationSidebar.render(), title);
         }
+    }
+};
+
+view.Graph = class extends grapher.Graph {
+
+    constructor(view, model, compound, options) {
+        super(compound, options);
+        this.view = view;
+        this.model = model;
+        this._arguments = new Map();
+        this._nodeKey = 0;
+    }
+
+    createNode(node) {
+        const value = new view.Node(this, node);
+        value.name = this._nodeKey++;
+        this.setNode(value);
+        return value;
+    }
+
+    createInput(input) {
+        const value = new view.Input(this, input);
+        value.name = this._nodeKey++;
+        this.setNode(value);
+        return value;
+    }
+
+    createOutput(output) {
+        const value = new view.Output(this, output);
+        value.name = this._nodeKey++;
+        this.setNode(value);
+        return value;
+    }
+
+    createArgument(argument) {
+        const name = argument.name;
+        if (!this._arguments.has(name)) {
+            this._arguments.set(name, new view.Argument(this, argument));
+        }
+        return this._arguments.get(name);
+    }
+
+    createEdge(from, to) {
+        const value = new view.Edge(from, to);
+        return value;
+    }
+
+    build(document, originElement) {
+
+        for (const argument of this._arguments.values()) {
+            argument.build();
+        }
+
+        super.build(document, originElement);
+    }
+};
+
+view.Node = class extends grapher.Node {
+
+    constructor(context, value) {
+        super();
+        this.context = context;
+        this.value = value;
+        view.Node.counter = view.Node.counter || 0;
+        this.id = 'node-' + (value.name ? 'name-' + value.name : 'id-' + (view.Node.counter++).toString());
+        this._add(this.value);
+    }
+
+    get class() {
+        return 'graph-node';
+    }
+
+    get inputs() {
+        return this.value.inputs;
+    }
+
+    get outputs() {
+        return this.value.outputs;
+    }
+
+    _add(node) {
+
+        const header =  this.header();
+        const styles = [ 'node-item-type' ];
+        const type = node.type;
+        const category = type && type.category ? type.category : '';
+        if (category) {
+            styles.push('node-item-type-' + category.toLowerCase());
+        }
+        if (typeof type.name !== 'string' || !type.name.split) { // #416
+            const identifier = this.context.model && this.context.model.identifier ? this.context.model.identifier : '?';
+            throw new view.Error("Unknown node type '" + JSON.stringify(type.name) + "' in '" + identifier + "'.");
+        }
+        const content = this.context.view.showNames && (node.name || node.location) ? (node.name || node.location) : type.name.split('.').pop();
+        const tooltip = this.context.view.showNames && (node.name || node.location) ? type.name : (node.name || node.location);
+        header.add(null, styles, content, tooltip, () => {
+            this.context.view.showNodeProperties(node, null);
+        });
+        if (node.type.nodes) {
+            header.add(null, styles, '\u0192', 'Show Function Definition', () => {
+                this.context.view.pushGraph(node.type);
+            });
+        }
+        if (node.nodes) {
+            header.add(null, styles, '+', null, () => {
+                // debugger;
+            });
+        }
+        const initializers = [];
+        let hiddenInitializers = false;
+        if (this.context.view.showInitializers) {
+            for (const input of node.inputs) {
+                if (input.visible && input.arguments.length === 1 && input.arguments[0].initializer != null) {
+                    initializers.push(input);
+                }
+                if ((!input.visible || input.arguments.length > 1) &&
+                    input.arguments.some((argument) => argument.initializer != null)) {
+                    hiddenInitializers = true;
+                }
+            }
+        }
+        let sortedAttributes = [];
+        const attributes = node.attributes || [];
+        if (this.context.view.showAttributes) {
+            sortedAttributes = attributes.filter((attribute) => attribute.visible).slice();
+        }
+        sortedAttributes.sort((a, b) => {
+            const au = a.name.toUpperCase();
+            const bu = b.name.toUpperCase();
+            return (au < bu) ? -1 : (au > bu) ? 1 : 0;
+        });
+        if (initializers.length > 0 || hiddenInitializers || sortedAttributes.length > 0) {
+            const block = this.list();
+            block.handler = () => {
+                this.context.view.showNodeProperties(node);
+            };
+            for (const initializer of initializers) {
+                const argument = initializer.arguments[0];
+                const type = argument.type;
+                let shape = '';
+                let separator = '';
+                if (type && type.shape && type.shape.dimensions && Array.isArray(type.shape.dimensions)) {
+                    shape = '\u3008' + type.shape.dimensions.map((d) => d ? d : '?').join('\u00D7') + '\u3009';
+                    if (type.shape.dimensions.length === 0 && argument.initializer && !argument.initializer.state) {
+                        try {
+                            shape = argument.initializer.toString();
+                            if (shape && shape.length > 10) {
+                                shape = shape.substring(0, 10) + '\u2026';
+                            }
+                            separator = ' = ';
+                        }
+                        catch (err) {
+                            let type = '?';
+                            try {
+                                type = argument.initializer.type.toString();
+                            }
+                            catch (error) {
+                                // continue regardless of error
+                            }
+                            const identifier = this.context.view.model && this.context.view.model.identifier ? this.context.view.model.identifier : '?';
+                            throw new view.Error("Failed to render tensor of type '" + type + "' in '" + identifier + "' (" + err.message + ").");
+                        }
+                    }
+                }
+                block.add(argument.name ? 'initializer-' + argument.name : '', initializer.name, shape, type ? type.toString() : '', separator);
+            }
+            if (hiddenInitializers) {
+                block.add(null, '\u3008' + '\u2026' + '\u3009', '', null, '');
+            }
+
+            for (const attribute of sortedAttributes) {
+                if (attribute.visible) {
+                    let value = sidebar.NodeSidebar.formatAttributeValue(attribute.value, attribute.type);
+                    if (value && value.length > 25) {
+                        value = value.substring(0, 25) + '\u2026';
+                    }
+                    block.add(null, attribute.name, value, attribute.type, ' = ');
+                }
+            }
+        }
+        if (Array.isArray(node.chain) && node.chain.length > 0) {
+            for (const innerNode of node.chain) {
+                this._add(innerNode);
+            }
+        }
+        if (node.inner) {
+            this._add(node.inner);
+        }
+    }
+};
+
+view.Input = class extends grapher.Node {
+
+    constructor(context, value) {
+        super();
+        this.context = context;
+        this.value = value;
+        view.Input.counter = view.Input.counter || 0;
+        const types = value.arguments.map((argument) => argument.type || '').join('\n');
+        let name = value.name || '';
+        if (name.length > 16) {
+            name = name.split('/').pop();
+        }
+        const header = this.header();
+        header.add(null, [ 'graph-item-input' ], name, types, () => this.context.view.showModelProperties());
+        this.id = 'input-' + (name ? 'name-' + name : 'id-' + (view.Input.counter++).toString());
+    }
+
+    get class() {
+        return 'graph-input';
+    }
+
+    get inputs() {
+        return [];
+    }
+
+    get outputs() {
+        return [ this.value ];
+    }
+};
+
+view.Output = class extends grapher.Node {
+
+    constructor(context, value) {
+        super();
+        this.context = context;
+        this.value = value;
+        const types = value.arguments.map((argument) => argument.type || '').join('\n');
+        let name = value.name || '';
+        if (name.length > 16) {
+            name = name.split('/').pop();
+        }
+        const header = this.header();
+        header.add(null, [ 'graph-item-output' ], name, types, () => this.context.view.showModelProperties());
+    }
+
+    get inputs() {
+        return [ this.value ];
+    }
+
+    get outputs() {
+        return [];
+    }
+};
+
+view.Argument = class {
+
+    constructor(context, argument) {
+        this.context = context;
+        this._argument = argument;
+    }
+
+    from(node) {
+        this._from = node;
+    }
+
+    to(node, controlDependency) {
+        this._to = this._to || [];
+        if (controlDependency) {
+            this._controlDependencies = this._controlDependencies || new Set();
+            this._controlDependencies.add(this._to.length);
+        }
+        this._to.push(node);
+    }
+
+    build() {
+        this._edges = this._edges || [];
+        if (this._from && this._to) {
+            for (let i = 0; i < this._to.length; i++) {
+                const to = this._to[i];
+                let content = '';
+                const type = this._argument.type;
+
+                if (type &&
+                    type.shape &&
+                    type.shape.dimensions &&
+                    type.shape.dimensions.length > 0 &&
+                    type.shape.dimensions.every((dim) => !dim || Number.isInteger(dim) || dim instanceof base.Int64 || (typeof dim === 'string'))) {
+                    content = type.shape.dimensions.map((dim) => dim || '?').join('\u00D7');
+                    content = content.length > 16 ? '' : content;
+                }
+                if (this.context.view.showNames) {
+                    content = this._argument.name.split('\n').shift(); // custom argument id
+                }
+                const edge = this.context.createEdge(this._from, to);
+                edge.v = this._from.name;
+                edge.w = to.name;
+                if (content) {
+                    edge.label = content;
+                }
+                edge.id = 'edge-' + this._argument.name;
+                if (this._controlDependencies && this._controlDependencies.has(i)) {
+                    edge.class = 'edge-path-control-dependency';
+                }
+                this.context.setEdge(edge);
+                this._edges.push(edge);
+            }
+        }
+    }
+};
+
+view.Edge = class extends grapher.Edge {
+
+    constructor(from, to) {
+        super(from, to);
+    }
+
+    get minlen() {
+        if (this.from.inputs.every((parameter) => parameter.arguments.every((argument) => argument.initializer))) {
+            return 2;
+        }
+        return 1;
     }
 };
 
 view.ModelContext = class {
 
-    constructor(context, entries) {
+    constructor(context, formats) {
         this._context = context;
         this._tags = new Map();
         this._content = new Map();
-        this._entries = entries || new Map();
+        this._formats = formats || new Map();
     }
 
     get identifier() {
@@ -1168,151 +1289,168 @@ view.ModelContext = class {
     }
 
     entries(format) {
-        return this._entries.get(format) || [];
+        return this._formats.get(format) || new Map();
     }
 
     open(type) {
         if (!this._content.has(type)) {
             this._content.set(type, undefined);
-            let reset = false;
-            switch (type) {
-                case 'json': {
-                    try {
-                        reset = true;
-                        const reader = json.TextReader.create(this.stream.peek());
-                        const obj = reader.read();
-                        this._content.set(type, obj);
-                    }
-                    catch (err) {
-                        // continue regardless of error
-                    }
-                    break;
-                }
-                case 'pkl': {
-                    try {
-                        if (this.stream.length > 2) {
-                            const stream = this.stream.peek(1)[0] === 0x78 ? zip.Archive.open(this.stream).entries[0].stream : this.stream;
-                            const match = (stream) => {
-                                const head = stream.peek(2);
-                                if (head[0] === 0x80 && head[1] < 7) {
-                                    return true;
-                                }
-                                stream.seek(-1);
-                                const tail = stream.peek(1);
-                                stream.seek(0);
-                                if (tail[0] === 0x2e) {
-                                    return true;
-                                }
-                                return false;
-                            };
-                            if (match(stream)) {
-                                reset = true;
-                                const unpickler = new python.Unpickler(stream);
-                                const execution = new python.Execution(null, (error, fatal) => {
-                                    const message = error && error.message ? error.message : error.toString();
-                                    this.exception(new view.Error(message.replace(/\.$/, '') + " in '" + this.identifier + "'."), fatal);
-                                });
-                                const obj = unpickler.load((name, args) => execution.invoke(name, args));
+            const stream = this.stream;
+            const position = stream.position;
+            const signatures = [
+                [ 0x89, 0x48, 0x44, 0x46, 0x0D, 0x0A, 0x1A, 0x0A ], // HDF5
+                [ 0x80, undefined, 0x8a, 0x0a, 0x6c, 0xfc, 0x9c, 0x46, 0xf9, 0x20, 0x6a, 0xa8, 0x50, 0x19 ] // PyTorch
+            ];
+            const skip =
+                signatures.some((signature) => signature.length <= stream.length && stream.peek(signature.length).every((value, index) => signature[index] === undefined || signature[index] === value)) ||
+                Array.from(this._tags).some((pair) => pair[0] !== 'flatbuffers' && pair[1].size > 0) ||
+                Array.from(this._content.values()).some((obj) => obj !== undefined);
+            if (!skip) {
+                switch (type) {
+                    case 'json': {
+                        try {
+                            const reader = json.TextReader.open(this.stream);
+                            if (reader) {
+                                const obj = reader.read();
                                 this._content.set(type, obj);
                             }
                         }
+                        catch (err) {
+                            // continue regardless of error
+                        }
+                        break;
                     }
-                    catch (err) {
-                        // continue regardless of error
+                    case 'json.gz': {
+                        try {
+                            const archive = gzip.Archive.open(this.stream);
+                            if (archive) {
+                                const entries = archive.entries;
+                                if (entries.size === 1) {
+                                    const stream = entries.values().next().value;
+                                    const reader = json.TextReader.open(stream);
+                                    if (reader) {
+                                        const obj = reader.read();
+                                        this._content.set(type, obj);
+                                    }
+                                }
+                            }
+                        }
+                        catch (err) {
+                            // continue regardless of error
+                        }
+                        break;
                     }
-                    break;
+                    case 'pkl': {
+                        let unpickler = null;
+                        try {
+                            if (stream.length > 2) {
+                                const zlib = (stream) => {
+                                    const buffer = stream.peek(2);
+                                    if (buffer[0] === 0x78) {
+                                        const check = (buffer[0] << 8) + buffer[1];
+                                        if (check % 31 === 0) {
+                                            const archive = zip.Archive.open(stream);
+                                            return archive.entries.get('');
+                                        }
+                                    }
+                                    return stream;
+                                };
+                                unpickler = python.Unpickler.open(zlib(stream));
+                            }
+                        }
+                        catch (err) {
+                            // continue regardless of error
+                        }
+                        if (unpickler) {
+                            const execution = new python.Execution(null, (error, fatal) => {
+                                const message = error && error.message ? error.message : error.toString();
+                                this.exception(new view.Error(message.replace(/\.$/, '') + " in '" + this.identifier + "'."), fatal);
+                            });
+                            const persistent_load = (saved_id) => {
+                                return saved_id;
+                            };
+                            const obj = unpickler.load((name, args) => execution.invoke(name, args), persistent_load);
+                            this._content.set(type, obj);
+                        }
+                        break;
+                    }
                 }
             }
-            if (reset) {
-                this.stream.seek(0);
+            if (stream.position !== position) {
+                stream.seek(0);
             }
         }
         return this._content.get(type);
     }
 
     tags(type) {
-        let tags = this._tags.get(type);
-        if (!tags) {
-            tags = new Map();
-            let reset = false;
-            const signatures = [
-                // Reject PyTorch models
-                [ 0x80, undefined, 0x8a, 0x0a, 0x6c, 0xfc, 0x9c, 0x46, 0xf9, 0x20, 0x6a, 0xa8, 0x50, 0x19 ],
-                // Reject TorchScript models
-                [ 0x50, 0x4b ]
-            ];
+        if (!this._tags.has(type)) {
+            let tags = new Map();
             const stream = this.stream;
-            if (!signatures.some((signature) => signature.length <= stream.length && stream.peek(signature.length).every((value, index) => signature[index] === undefined || signature[index] === value))) {
-                try {
-                    switch (type) {
-                        case 'pbtxt': {
-                            reset = true;
-                            const decoder = base.TextDecoder.create(stream.peek());
-                            let count = 0;
-                            for (let i = 0; i < 0x100; i++) {
-                                const c = decoder.decode();
-                                switch (c) {
-                                    case '\n': case '\r': case '\t': case '\0': break;
-                                    case undefined: i = 0x100; break;
-                                    default: count += c < ' ' ? 1 : 0; break;
-                                }
+            const position = stream.position;
+            if (stream) {
+                const signatures = [
+                    [ 0x89, 0x48, 0x44, 0x46, 0x0D, 0x0A, 0x1A, 0x0A ], // HDF5
+                    [ 0x80, undefined, 0x8a, 0x0a, 0x6c, 0xfc, 0x9c, 0x46, 0xf9, 0x20, 0x6a, 0xa8, 0x50, 0x19 ], // PyTorch
+                    [ 0x50, 0x4b ], // Zip
+                    [ 0x1f, 0x8b ] // Gzip
+                ];
+                const skip =
+                    signatures.some((signature) => signature.length <= stream.length && stream.peek(signature.length).every((value, index) => signature[index] === undefined || signature[index] === value)) ||
+                    (Array.from(this._tags).some((pair) => pair[0] !== 'flatbuffers' && pair[1].size > 0) && type !== 'pb+') ||
+                    Array.from(this._content.values()).some((obj) => obj !== undefined);
+                if (!skip) {
+                    try {
+                        switch (type) {
+                            case 'pbtxt': {
+                                const reader = protobuf.TextReader.open(stream);
+                                tags = reader ? reader.signature() : tags;
+                                break;
                             }
-                            if (count < 4) {
-                                const reader = protobuf.TextReader.create(stream.peek());
-                                reader.start(false);
-                                while (!reader.end(false)) {
-                                    const tag = reader.tag();
-                                    tags.set(tag, true);
-                                    if (reader.token() === '{') {
-                                        reader.start();
-                                        while (!reader.end()) {
-                                            const subtag = reader.tag();
-                                            tags.set(tag + '.' + subtag, true);
-                                            reader.skip();
-                                        }
+                            case 'pb': {
+                                const reader = protobuf.BinaryReader.open(stream);
+                                tags = reader.signature();
+                                break;
+                            }
+                            case 'pb+': {
+                                const reader = protobuf.BinaryReader.open(stream);
+                                tags = reader.decode();
+                                break;
+                            }
+                            case 'flatbuffers': {
+                                if (stream.length >= 8) {
+                                    const buffer = stream.peek(Math.min(32, stream.length));
+                                    const reader = flatbuffers.BinaryReader.open(buffer);
+                                    const identifier = reader.identifier;
+                                    if (identifier.length > 0) {
+                                        tags.set('file_identifier', identifier);
                                     }
-                                    else {
-                                        reader.skip();
-                                    }
                                 }
+                                break;
                             }
-                            break;
-                        }
-                        case 'pb': {
-                            reset = true;
-                            const reader = protobuf.Reader.create(stream.peek());
-                            const length = reader.length;
-                            while (reader.position < length) {
-                                const tag = reader.uint32();
-                                const number = tag >>> 3;
-                                const type = tag & 7;
-                                if (type > 5 || number === 0) {
-                                    tags = new Map();
-                                    break;
-                                }
-                                tags.set(number, type);
-                                try {
-                                    reader.skipType(type);
-                                }
-                                catch (err) {
-                                    tags = new Map();
-                                    break;
-                                }
+                            case 'xml': {
+                                const reader = xml.TextReader.open(stream);
+                                const document = reader.peek();
+                                const element = document.documentElement;
+                                const namespaceURI = element.namespaceURI;
+                                const localName = element.localName;
+                                const name = namespaceURI ? namespaceURI + ':' + localName : localName;
+                                tags.set(name, element);
+                                break;
                             }
-                            break;
                         }
                     }
-                }
-                catch (error) {
-                    tags = new Map();
+                    catch (error) {
+                        tags.clear();
+                    }
                 }
             }
-            if (reset) {
-                this.stream.seek(0);
+            if (stream.position !== position) {
+                stream.seek(position);
             }
             this._tags.set(type, tags);
         }
-        return tags;
+        return this._tags.get(type);
     }
 };
 
@@ -1320,14 +1458,12 @@ view.ArchiveContext = class {
 
     constructor(host, entries, rootFolder, identifier, stream) {
         this._host = host;
-        this._entries = {};
+        this._entries = new Map();
         if (entries) {
             for (const entry of entries) {
-                if (entry.name.startsWith(rootFolder)) {
-                    const name = entry.name.substring(rootFolder.length);
-                    if (name.length > 0 && name.indexOf('/') === -1) {
-                        this._entries[name] = entry;
-                    }
+                if (entry[0].startsWith(rootFolder)) {
+                    const name = entry[0].substring(rootFolder.length);
+                    this._entries.set(name, entry[1]);
                 }
             }
         }
@@ -1345,11 +1481,17 @@ view.ArchiveContext = class {
 
     request(file, encoding, base) {
         if (base === undefined) {
-            const entry = this._entries[file];
-            if (!entry) {
+            const stream = this._entries.get(file);
+            if (!stream) {
                 return Promise.reject(new Error('File not found.'));
             }
-            return Promise.resolve(encoding ? new TextDecoder(encoding).decode(entry.data) : entry.stream);
+            if (encoding) {
+                const decoder = new TextDecoder(encoding);
+                const buffer = stream.peek();
+                const value = decoder.decode(buffer);
+                return Promise.resolve(value);
+            }
+            return Promise.resolve(stream);
         }
         return this._host.request(file, encoding, base);
     }
@@ -1376,30 +1518,32 @@ view.ModelFactoryService = class {
     constructor(host) {
         this._host = host;
         this._extensions = [];
-        this.register('./pytorch', [ '.pt', '.pth', '.pt1', '.pyt', '.pkl', '.h5', '.t7', '.model', '.dms', '.tar', '.ckpt', '.chkpt', '.tckpt', '.bin', '.pb', '.zip', '.nn' ]);
-        this.register('./onnx', [ '.onnx', '.pb', '.pbtxt', '.prototxt', '.model', '.pt', '.pth', '.pkl' ]);
-        this.register('./mxnet', [ '.mar', '.model', '.json', '.params' ]);
-        this.register('./coreml', [ '.mlmodel' ]);
+        this.register('./pytorch', [ '.pt', '.pth', '.ptl', '.pt1', '.pyt', '.pyth', '.pkl', '.pickle', '.h5', '.t7', '.model', '.dms', '.tar', '.ckpt', '.chkpt', '.tckpt', '.bin', '.pb', '.zip', '.nn', '.torchmodel', '.torchscript', '.ot', '.params' ]);
+        this.register('./onnx', [ '.onnx', '.onn', '.pb', '.pbtxt', '.prototxt', '.model', '.pt', '.pth', '.pkl', '.ort', '.ort.onnx' ]);
+        this.register('./mxnet', [ '.json', '.params' ]);
+        this.register('./coreml', [ '.mlmodel', '.bin', 'manifest.json', 'metadata.json', 'featuredescriptions.json', '.pb' ]);
         this.register('./caffe', [ '.caffemodel', '.pbtxt', '.prototxt', '.pt', '.txt' ]);
         this.register('./caffe2', [ '.pb', '.pbtxt', '.prototxt' ]);
-        this.register('./torch', [ '.t7' ]);
-        this.register('./tflite', [ '.tflite', '.lite', '.tfl', '.bin', '.pb', '.tmfile', '.h5', '.model', '.json' ]);
-        this.register('./tf', [ '.pb', '.meta', '.pbtxt', '.prototxt', '.pt', '.json', '.index', '.ckpt', '.graphdef', /.data-[0-9][0-9][0-9][0-9][0-9]-of-[0-9][0-9][0-9][0-9][0-9]$/, /^events.out.tfevents./ ]);
+        this.register('./torch', [ '.t7', '.net' ]);
+        this.register('./tflite', [ '.tflite', '.lite', '.tfl', '.bin', '.pb', '.tmfile', '.h5', '.model', '.json', '.txt' ]);
+        this.register('./circle', [ '.circle' ]);
+        this.register('./tf', [ '.pb', '.meta', '.pbtxt', '.prototxt', '.pt', '.json', '.index', '.ckpt', '.graphdef', '.pbmm', /.data-[0-9][0-9][0-9][0-9][0-9]-of-[0-9][0-9][0-9][0-9][0-9]$/, /^events.out.tfevents./ ]);
         this.register('./mediapipe', [ '.pbtxt' ]);
         this.register('./uff', [ '.uff', '.pb', '.pbtxt', '.uff.txt', '.trt', '.engine' ]);
+        this.register('./tensorrt', [ '.trt', '.engine', '.model', '.txt', '.uff', '.pb', '.tmfile', '.onnx', '.pth', '.dnn' ]);
         this.register('./npz', [ '.npz', '.npy', '.pkl' ]);
         this.register('./lasagne', [ '.pkl', '.pickle', '.joblib', '.model', '.pkl.z', '.joblib.z' ]);
-        this.register('./lightgbm', [ '.txt', '.pkl' ]);
+        this.register('./lightgbm', [ '.txt', '.pkl', '.model' ]);
+        this.register('./keras', [ '.h5', '.hd5', '.hdf5', '.keras', '.json', '.cfg', '.model', '.pb', '.pth', '.weights', '.pkl', '.lite', '.tflite', '.ckpt' ]);
         this.register('./sklearn', [ '.pkl', '.pickle', '.joblib', '.model', '.meta', '.pb', '.pt', '.h5', '.pkl.z', '.joblib.z' ]);
         this.register('./pickle', [ '.pkl', '.pickle', '.joblib', '.model', '.meta', '.pb', '.pt', '.h5', '.pkl.z', '.joblib.z' ]);
         this.register('./cntk', [ '.model', '.cntk', '.cmf', '.dnn' ]);
-        this.register('./paddle', [ '.pdmodel', '.pdparams', '.paddle', '__model__', '.pbtxt', '.txt', '.tar', '.tar.gz' ]);
+        this.register('./paddle', [ '.pdmodel', '.pdparams', '.pdiparams', '.paddle', '__model__', '.__model__', '.pbtxt', '.txt', '.tar', '.tar.gz', '.nb' ]);
         this.register('./bigdl', [ '.model', '.bigdl' ]);
         this.register('./darknet', [ '.cfg', '.model', '.txt', '.weights' ]);
         this.register('./weka', [ '.model' ]);
-        this.register('./rknn', [ '.rknn' ]);
+        this.register('./rknn', [ '.rknn', '.onnx' ]);
         this.register('./dlc', [ '.dlc' ]);
-        this.register('./keras', [ '.h5', '.hd5', '.hdf5', '.keras', '.json', '.cfg', '.model', '.pb', '.pth', '.weights', '.pkl', '.lite', '.tflite', '.ckpt' ]);
         this.register('./armnn', [ '.armnn', '.json' ]);
         this.register('./mnn', ['.mnn']);
         this.register('./ncnn', [ '.param', '.bin', '.cfg.ncnn', '.weights.ncnn' ]);
@@ -1408,11 +1552,14 @@ view.ModelFactoryService = class {
         this.register('./mslite', [ '.ms']);
         this.register('./barracuda', [ '.nn' ]);
         this.register('./dnn', [ '.dnn' ]);
+        this.register('./xmodel', [ '.xmodel' ]);
         this.register('./openvino', [ '.xml', '.bin' ]);
         this.register('./flux', [ '.bson' ]);
         this.register('./dl4j', [ '.zip' ]);
         this.register('./mlnet', [ '.zip' ]);
         this.register('./acuity', [ '.json' ]);
+        this.register('./imgdnn', [ '.dnn', 'params', '.json' ]);
+        this.register('./om', [ '.om', '.onnx', '.pb' ]);
     }
 
     register(id, extensions) {
@@ -1423,14 +1570,54 @@ view.ModelFactoryService = class {
 
     open(context) {
         return this._openSignature(context).then((context) => {
-            const entries = this._openArchive(context);
-            const modelContext = new view.ModelContext(context, entries);
+            const containers = new Map();
+            let stream = context.stream;
+            const entries = context.entries;
+            if (!stream && entries && entries.size > 0) {
+                containers.set('', entries);
+            }
+            else {
+                const identifier = context.identifier;
+                try {
+                    const archive = gzip.Archive.open(stream);
+                    if (archive) {
+                        const entries = archive.entries;
+                        containers.set('gzip', entries);
+                        if (entries.size === 1) {
+                            stream = entries.values().next().value;
+                        }
+                    }
+                }
+                catch (error) {
+                    const message = error && error.message ? error.message : error.toString();
+                    throw new view.ArchiveError(message.replace(/\.$/, '') + " in '" + identifier + "'.");
+                }
+                try {
+                    const formats = new Map([ [ 'zip', zip ], [ 'tar', tar ] ]);
+                    for (const pair of formats) {
+                        const format = pair[0];
+                        const module = pair[1];
+                        const archive = module.Archive.open(stream);
+                        if (archive) {
+                            containers.set(format, archive.entries);
+                            containers.delete('gzip');
+                            break;
+                        }
+                    }
+                }
+                catch (error) {
+                    const message = error && error.message ? error.message : error.toString();
+                    throw new view.ArchiveError(message.replace(/\.$/, '') + " in '" + identifier + "'.");
+                }
+            }
+
+            const modelContext = new view.ModelContext(context, containers);
             return this._openContext(modelContext).then((model) => {
                 if (model) {
                     return model;
                 }
-                if (entries.size > 0) {
-                    return this._openEntries(entries.values().next().value).then((context) => {
+                if (containers.size > 0) {
+                    return this._openEntries(containers.values().next().value).then((context) => {
                         if (context) {
                             return this._openContext(context);
                         }
@@ -1445,43 +1632,37 @@ view.ModelFactoryService = class {
     _unsupported(context) {
         const identifier = context.identifier;
         const extension = identifier.split('.').pop().toLowerCase();
-        const format = [ 'Zip', 'tar' ].find((extension) => context.entries(extension.toLowerCase()).length > 0);
-        if (format) {
-            throw new view.Error("Invalid file content. File contains " + format + " archive in '" + identifier + "'.", true);
+        const stream = context.stream;
+        for (const module of [ zip, tar, gzip ]) {
+            let archive = null;
+            try {
+                archive = module.Archive.open(stream);
+            }
+            catch (error) {
+                // continue regardless of error
+            }
+            if (archive) {
+                throw new view.Error("Archive contains no model files in '" + identifier + "'.", true);
+            }
         }
-        const knownUnsupportedIdentifiers = new Set([
-            'natives_blob.bin',
-            'v8_context_snapshot.bin',
-            'snapshot_blob.bin',
-            'image_net_labels.json',
-            'package.json',
-            'models.json',
-            'LICENSE.meta',
-            'input_0.pb',
-            'output_0.pb'
-        ]);
-        const skip = knownUnsupportedIdentifiers.has(identifier);
-        const encodings = [
-            {
-                type: 'pb',
-                name: 'Protocol Buffers',
-                formats: []
-            },
-            {
-                type: 'pbtxt',
-                name: 'Protocol Buffers text',
-                formats: [
-                    { name: 'ImageNet LabelMap data', tags: [ 'entry', 'entry.target_class' ] },
-                    { name: 'StringIntLabelMapProto data', tags: [ 'item', 'item.id', 'item.name' ] },
-                    { name: 'caffe.LabelMap data', tags: [ 'item', 'item.name', 'item.label' ] },
-                    { name: 'Triton Inference Server configuration', tags: [ 'name', 'platform', 'input', 'output' ] },
-                    { name: 'TensorFlow OpList data', tags: [ 'op', 'op.name', 'op.input_arg' ] }
-                ]
-            },
-            {
-                type: 'json',
-                name: 'JSON',
-                formats: [
+        const skip = () => {
+            const knownUnsupportedIdentifiers = new Set([
+                'natives_blob.bin',
+                'v8_context_snapshot.bin',
+                'snapshot_blob.bin',
+                'image_net_labels.json',
+                'package.json',
+                'models.json',
+                'LICENSE.meta',
+                'input_0.pb',
+                'output_0.pb'
+            ]);
+            return knownUnsupportedIdentifiers.has(context.identifier);
+        };
+        const json = () => {
+            const obj = context.open('json');
+            if (obj) {
+                const formats = [
                     { name: 'Netron metadata', tags: [ '[].name', '[].schema' ] },
                     { name: 'Netron metadata', tags: [ '[].name', '[].attributes' ] },
                     { name: 'Darkflow metadata', tags: [ 'net', 'type', 'model' ] },
@@ -1490,14 +1671,49 @@ view.ModelFactoryService = class {
                     { name: 'DeepLearningExamples configuration', tags: [ 'attention_probs_dropout_prob', 'hidden_act', 'hidden_dropout_prob', 'hidden_size', ] },
                     { name: 'NuGet assets', tags: [ 'version', 'targets', 'packageFolders' ] },
                     { name: 'NuGet data', tags: [ 'format', 'restore', 'projects' ] },
-                    { name: 'NPM package', tags: [ 'name', 'version', 'dependencies' ] }
-                ]
+                    { name: 'NPM package', tags: [ 'name', 'version', 'dependencies' ] },
+                    { name: 'NetworkX adjacency_data', tags: [ 'directed', 'graph', 'nodes' ] },
+                    { name: 'Waifu2x data', tags: [ 'name', 'arch_name', 'channels' ] },
+                    { name: 'Waifu2x data', tags: [ '[].nInputPlane', '[].nOutputPlane', '[].weight', '[].bias' ] }
+                ];
+                const match = (obj, tag) => {
+                    if (tag.startsWith('[].')) {
+                        tag = tag.substring(3);
+                        return (Array.isArray(obj) && obj.some((item) => Object.prototype.hasOwnProperty.call(item, tag)));
+                    }
+                    return Object.prototype.hasOwnProperty.call(obj, tag);
+                };
+                for (const format of formats) {
+                    if (format.tags.every((tag) => match(obj, tag))) {
+                        throw new view.Error('Invalid file content. File contains ' + format.name + '.', true);
+                    }
+                }
+                const content = JSON.stringify(obj).substring(0, 100).replace(/\s/, '').substr(0, 48) + '...';
+                throw new view.Error("Unsupported JSON content '" + (content.length > 64 ? content.substring(0, 100) + '...' : content) + "' for extension '." + extension + "' in '" + identifier + "'.", !skip());
             }
-        ];
-        for (const encoding of encodings) {
-            const tags = context.tags(encoding.type);
+        };
+        const pbtxt = () => {
+            const formats = [
+                { name: 'ImageNet LabelMap data', tags: [ 'entry', 'entry.target_class' ] },
+                { name: 'StringIntLabelMapProto data', tags: [ 'item', 'item.id', 'item.name' ] },
+                { name: 'caffe.LabelMap data', tags: [ 'item', 'item.name', 'item.label' ] },
+                { name: 'Triton Inference Server configuration', tags: [ 'name', 'platform', 'input', 'output' ] },
+                { name: 'TensorFlow OpList data', tags: [ 'op', 'op.name', 'op.input_arg' ] },
+                { name: 'vitis.ai.proto.DpuModelParamList data', tags: [ 'model', 'model.name', 'model.kernel' ] },
+                { name: 'object_detection.protos.DetectionModel data', tags: [ 'model', 'model.ssd' ] },
+                { name: 'object_detection.protos.DetectionModel data', tags: [ 'model', 'model.faster_rcnn' ] },
+                { name: 'tensorflow.CheckpointState data', tags: [ 'model_checkpoint_path', 'all_model_checkpoint_paths' ] },
+                { name: 'apollo.perception.camera.traffic_light.detection.DetectionParam data', tags: [ 'min_crop_size', 'crop_method' ] },
+                { name: 'tidl_meta_arch.TIDLMetaArch data', tags: [ 'caffe_ssd' ] },
+                { name: 'tidl_meta_arch.TIDLMetaArch data', tags: [ 'tf_od_api_ssd' ] },
+                { name: 'tidl_meta_arch.TIDLMetaArch data', tags: [ 'tidl_ssd' ] },
+                { name: 'tidl_meta_arch.TIDLMetaArch data', tags: [ 'tidl_faster_rcnn' ] },
+                { name: 'tidl_meta_arch.TIDLMetaArch data', tags: [ 'tidl_yolo' ] },
+                { name: 'tidl_meta_arch.TIDLMetaArch data', tags: [ 'tidl_retinanet' ] }
+            ];
+            const tags = context.tags('pbtxt');
             if (tags.size > 0) {
-                for (const format of encoding.formats) {
+                for (const format of formats) {
                     if (format.tags.every((tag) => tags.has(tag))) {
                         throw new view.Error('Invalid file content. File contains ' + format.name + '.', true);
                     }
@@ -1506,130 +1722,154 @@ view.ModelFactoryService = class {
                 entries.push(...Array.from(tags).filter((pair) => pair[0].toString().indexOf('.') === -1));
                 entries.push(...Array.from(tags).filter((pair) => pair[0].toString().indexOf('.') !== -1));
                 const content = entries.map((pair) => pair[1] === true ? pair[0] : pair[0] + ':' + JSON.stringify(pair[1])).join(',');
-                throw new view.Error("Unsupported " + encoding.name + " content '" + (content.length > 64 ? content.substring(0, 100) + '...' : content) + "' for extension '." + extension + "' in '" + identifier + "'.", !skip);
+                throw new view.Error("Unsupported Protocol Buffers text content '" + (content.length > 64 ? content.substring(0, 100) + '...' : content) + "' for extension '." + extension + "' in '" + identifier + "'.", !skip());
             }
-            const obj = context.open(encoding.type);
-            if (obj) {
-                const match = (obj, tag) => {
-                    if (tag.startsWith('[].')) {
-                        tag = tag.substring(3);
-                        return (Array.isArray(obj) && obj.some((item) => Object.prototype.hasOwnProperty.call(item, tag)));
+        };
+        const pb = () => {
+            const tags = context.tags('pb+');
+            if (Object.keys(tags).length > 0) {
+                const formats = [
+                    { name: 'sentencepiece.ModelProto data', tags: [[1,[[1,2],[2,5],[3,0]]],[2,[[1,2],[2,2],[3,0],[4,0],[5,2],[6,0],[7,2],[10,5],[16,0],[40,0],[41,0],[42,0],[43,0]]],[3,[]],[4,[]],[5,[]]] },
+                    { name: 'mediapipe.BoxDetectorIndex data', tags: [[1,[[1,[[1,[[1,5],[2,5],[3,5],[4,5],[6,0],[7,5],[8,5],[10,5],[11,0],[12,0]]],[2,5],[3,[]]]],[2,false],[3,false],[4,false],[5,false]]],[2,false],[3,false]] },
+                    { name: 'third_party.tensorflow.python.keras.protobuf.SavedMetadata data', tags: [[1,[[1,[[1,0],[2,0]]],[2,0],[3,2],[4,2],[5,2]]]] },
+                    { name: 'pblczero.Net data', tags: [[1,5],[2,2],[3,[[1,0],[2,0],[3,0]],[10,[[1,[]],[2,[]],[3,[]],[4,[]],[5,[]],[6,[]]]],[11,[]]]] } // https://github.com/LeelaChessZero/lczero-common/blob/master/proto/net.proto
+                ];
+                const match = (tags, schema) => {
+                    for (const pair of schema) {
+                        const key = pair[0];
+                        const inner = pair[1];
+                        const value = tags[key];
+                        if (value === undefined) {
+                            continue;
+                        }
+                        if (inner === false) {
+                            return false;
+                        }
+                        if (Array.isArray(inner)) {
+                            if (typeof value !== 'object' || !match(value, inner)) {
+                                return false;
+                            }
+                        }
+                        else if (inner !== value) {
+                            if (inner === 2 && !Array.isArray(value) && Object(value) === (value) && Object.keys(value).length === 0) {
+                                return true;
+                            }
+                            return false;
+                        }
                     }
-                    return Object.prototype.hasOwnProperty.call(obj, tag);
+                    return true;
                 };
-                for (const format of encoding.formats) {
-                    if (format.tags.every((tag) => match(obj, tag))) {
+                const tags = context.tags('pb+');
+                for (const format of formats) {
+                    if (match(tags, format.tags)) {
                         throw new view.Error('Invalid file content. File contains ' + format.name + '.', true);
                     }
                 }
-                const content = JSON.stringify(obj).substring(0, 100).replace(/\s/, '').substr(0, 48) + '...';
-                throw new view.Error("Unsupported " + encoding.name + " content '" + (content.length > 64 ? content.substring(0, 100) + '...' : content) + "' for extension '." + extension + "' in '" + identifier + "'.", !skip);
+                const format = (tags) => {
+                    const content = Object.entries(tags).map((pair) => {
+                        const key = pair[0];
+                        const value = pair[1];
+                        return key.toString() + ':' + (Object(value) === value ? '{' + format(value) + '}' : value.toString());
+                    });
+                    return content.join(',');
+                };
+                const content = format(tags);
+                throw new view.Error("Unsupported Protocol Buffers content '" + (content.length > 64 ? content.substring(0, 100) + '...' : content) + "' for extension '." + extension + "' in '" + identifier + "'.", !skip());
             }
-        }
-        const stream = context.stream;
-        stream.seek(0);
-        const buffer = stream.peek(Math.min(16, stream.length));
-        const bytes = Array.from(buffer).map((c) => (c < 16 ? '0' : '') + c.toString(16)).join('');
-        const content = buffer.length > 268435456 ? '(' + bytes + ') [' + stream.length.toString() + ']': '(' + bytes + ')';
-        throw new view.Error("Unsupported file content " + content + " for extension '." + extension + "' in '" + identifier + "'.", !skip);
-    }
-
-    _openArchive(context) {
-        const entries = new Map();
-        let stream = context.stream;
-        let extension;
-        let identifier = context.identifier;
-        let buffer = stream.peek(Math.min(512, stream.length));
-        try {
-            extension = identifier.split('.').pop().toLowerCase();
-            if (extension === 'gz' || extension === 'tgz' || (buffer.length >= 18 && buffer[0] === 0x1f && buffer[1] === 0x8b)) {
-                const entries = gzip.Archive.open(stream).entries;
-                if (entries.length === 1) {
-                    const entry = entries[0];
-                    if (entry.name) {
-                        identifier = entry.name;
+        };
+        const flatbuffers = () => {
+            const tags = context.tags('flatbuffers');
+            if (tags.has('file_identifier')) {
+                const file_identifier = tags.get('file_identifier');
+                const formats = [
+                    { name: 'onnxruntime.experimental.fbs.InferenceSession data', identifier: 'ORTM' },
+                    { name: 'tflite.Model data', identifier: 'TFL3' },
+                    { name: 'FlatBuffers ENNC data', identifier: 'ENNC' },
+                ];
+                for (const format of formats) {
+                    if (file_identifier === format.identifier) {
+                        throw new view.Error('Invalid file content. File contains ' + format.name + '.', true);
                     }
-                    else {
-                        identifier = identifier.substring(0, identifier.lastIndexOf('.'));
-                        switch (extension) {
-                            case 'tgz':
-                            case 'tar': {
-                                if (identifier.split('.').pop().toLowerCase() !== 'tar') {
-                                    identifier += '.tar';
-                                }
-                                break;
-                            }
-                        }
+                }
+            }
+        };
+        const xml = () => {
+            const tags = context.tags('xml');
+            if (tags.size > 0) {
+                const formats = [
+                    { name: 'OpenCV storage data', tags: [ 'opencv_storage' ] },
+                    { name: 'XHTML markup', tags: [ 'http://www.w3.org/1999/xhtml:html' ]}
+                ];
+                for (const format of formats) {
+                    if (format.tags.some((tag) => tags.has(tag))) {
+                        throw new view.Error('Invalid file content. File contains ' + format.name + '.', true);
                     }
-                    stream = entry.stream;
-                    buffer = stream.peek(Math.min(512, stream.length));
                 }
+                throw new view.Error("Unsupported XML content '" + tags.keys().next().value + "' in '" + identifier + "'.", !skip());
             }
-        }
-        catch (error) {
-            const message = error && error.message ? error.message : error.toString();
-            throw new view.ArchiveError(message.replace(/\.$/, '') + " in '" + identifier + "'.");
-        }
-
-        try {
-            extension = identifier.split('.').pop().toLowerCase();
-            if (extension === 'zip' || (buffer.length > 2 && buffer[0] === 0x50 && buffer[1] === 0x4B)) {
-                entries.set('zip', zip.Archive.open(stream).entries);
-            }
-            if (extension === 'tar' || (buffer.length >= 512)) {
-                let sum = 0;
-                for (let i = 0; i < 512; i++) {
-                    sum += (i >= 148 && i < 156) ? 32 : buffer[i];
-                }
-                let checksum = '';
-                for (let i = 148; i < 156 && buffer[i] !== 0x00; i++) {
-                    checksum += String.fromCharCode(buffer[i]);
-                }
-                checksum = parseInt(checksum, 8);
-                if (!isNaN(checksum) && sum === checksum) {
-                    entries.set('tar', tar.Archive.open(stream).entries);
-                }
-            }
-        }
-        catch (error) {
-            const message = error && error.message ? error.message : error.toString();
-            throw new view.ArchiveError(message.replace(/\.$/, '') + " in '" + identifier + "'.");
-        }
-        return entries;
+        };
+        const unknown = () => {
+            stream.seek(0);
+            const buffer = stream.peek(Math.min(16, stream.length));
+            const bytes = Array.from(buffer).map((c) => (c < 16 ? '0' : '') + c.toString(16)).join('');
+            const content = stream.length > 268435456 ? '(' + bytes + ') [' + stream.length.toString() + ']': '(' + bytes + ')';
+            throw new view.Error("Unsupported file content " + content + " for extension '." + extension + "' in '" + identifier + "'.", !skip());
+        };
+        json();
+        pbtxt();
+        pb();
+        flatbuffers();
+        xml();
+        unknown();
     }
 
     _openContext(context) {
         const modules = this._filter(context).filter((module) => module && module.length > 0);
         const errors = [];
-        let match = false;
+        let success = false;
         const nextModule = () => {
             if (modules.length > 0) {
                 const id = modules.shift();
                 return this._host.require(id).then((module) => {
+                    const updateErrorContext = (error, context) => {
+                        const content = " in '" + context.identifier + "'.";
+                        if (error && !error.message.endsWith(content) && (error.context === undefined || error.context === true)) {
+                            error.message = error.message.replace(/\.$/, '') + content;
+                        }
+                    };
                     if (!module.ModelFactory) {
                         throw new view.Error("Failed to load module '" + id + "'.");
                     }
                     const modelFactory = new module.ModelFactory();
-                    if (!modelFactory.match(context)) {
-                        return nextModule();
+                    let match = undefined;
+                    try {
+                        match = modelFactory.match(context);
+                        if (!match) {
+                            return nextModule();
+                        }
                     }
-                    match = true;
-                    return modelFactory.open(context).then((model) => {
+                    catch (error) {
+                        updateErrorContext(error, context);
+                        return Promise.reject(error);
+                    }
+                    success = true;
+                    return modelFactory.open(context, match).then((model) => {
+                        if (!model.identifier) {
+                            model.identifier = context.identifier;
+                        }
                         return model;
                     }).catch((error) => {
-                        const text = " in '" + context.identifier + "'.";
-                        if (error && !error.message.endsWith(text) && (error.context === undefined || error.context === true)) {
-                            error.message = error.message.replace(/\.$/, '') + text;
-                        }
+                        updateErrorContext(error, context);
                         errors.push(error);
                         return nextModule();
                     });
                 });
             }
             else {
-                if (match) {
+                if (success) {
                     if (errors.length === 1) {
-                        return Promise.reject(errors[0]);
+                        const error = errors[0];
+                        return Promise.reject(error);
                     }
                     return Promise.reject(new view.Error(errors.map((err) => err.message).join('\n')));
                 }
@@ -1641,71 +1881,125 @@ view.ModelFactoryService = class {
 
     _openEntries(entries) {
         try {
-            const files = entries.map((entry) => entry.name).filter((file) => !file.endsWith('/') && !file.split('/').pop().startsWith('.')).slice();
-            const values = files.filter((file) => !file.startsWith('PaxHeader/') && (!file.startsWith('.') || file.startsWith('./')));
-            const map = values.map((file) => file.split('/').slice(0, -1));
-            const at = index => list => list[index];
-            const rotate = list => list[0].map((item, index) => list.map(at(index)));
-            const equals = list => list.every((item) => item === list[0]);
-            const folder = rotate(map).filter(equals).map(at(0)).join('/');
-            const rootFolder = folder.length === 0 ? folder : folder + '/';
-            let matches = [];
-            const queue = entries.slice(0);
-            const nextEntry = () => {
-                if (queue.length > 0) {
-                    const entry = queue.shift();
-                    if (entry.name.startsWith(rootFolder)) {
-                        const identifier = entry.name.substring(rootFolder.length);
-                        if (identifier.length > 0 && identifier.indexOf('/') < 0 && !identifier.startsWith('.')) {
-                            const context = new view.ModelContext(new view.ArchiveContext(this._host, null, rootFolder, entry.name, entry.stream));
-                            let modules = this._filter(context);
-                            const nextModule = () => {
-                                if (modules.length > 0) {
-                                    const id = modules.shift();
-                                    return this._host.require(id).then((module) => {
-                                        if (!module.ModelFactory) {
-                                            throw new view.ArchiveError("Failed to load module '" + id + "'.", null);
-                                        }
-                                        const factory = new module.ModelFactory();
-                                        if (factory.match(context)) {
-                                            matches.push(entry);
-                                            modules = [];
-                                        }
-                                        return nextModule();
-                                    });
-                                }
-                                else {
-                                    return nextEntry();
-                                }
-                            };
-                            return nextModule();
-                        }
-                    }
-                    return nextEntry();
-                }
-                else {
-                    if (matches.length === 0) {
-                        return Promise.resolve(null);
-                    }
-                    // MXNet
-                    if (matches.length === 2 &&
-                        matches.some((e) => e.name.toLowerCase().endsWith('.params')) &&
-                        matches.some((e) => e.name.toLowerCase().endsWith('-symbol.json'))) {
-                        matches = matches.filter((e) => e.name.toLowerCase().endsWith('.params'));
-                    }
-                    // TensorFlow Bundle
-                    if (matches.length > 1 &&
-                        matches.some((e) => e.name.toLowerCase().endsWith('.data-00000-of-00001'))) {
-                        matches = matches.filter((e) => !e.name.toLowerCase().endsWith('.data-00000-of-00001'));
-                    }
-                    if (matches.length > 1) {
-                        return Promise.reject(new view.ArchiveError('Archive contains multiple model files.'));
-                    }
-                    const match = matches.shift();
-                    return Promise.resolve(new view.ModelContext(new view.ArchiveContext(this._host, entries, rootFolder, match.name, match.stream)));
-                }
+            const rootFolder = (files) => {
+                const map = files.map((file) => file.split('/').slice(0, -1));
+                const at = index => list => list[index];
+                const rotate = list => list.length === 0 ? [] : list[0].map((item, index) => list.map(at(index)));
+                const equals = list => list.every((item) => item === list[0]);
+                const folder = rotate(map).filter(equals).map(at(0)).join('/');
+                return folder.length === 0 ? folder : folder + '/';
             };
-            return nextEntry();
+            const filter = (queue) => {
+                let matches = [];
+                const nextEntry = () => {
+                    if (queue.length > 0) {
+                        const entry = queue.shift();
+                        const context = new view.ModelContext(new view.ArchiveContext(this._host, null, folder, entry.name, entry.stream));
+                        let modules = this._filter(context);
+                        const nextModule = () => {
+                            if (modules.length > 0) {
+                                const id = modules.shift();
+                                return this._host.require(id).then((module) => {
+                                    if (!module.ModelFactory) {
+                                        throw new view.ArchiveError("Failed to load module '" + id + "'.", null);
+                                    }
+                                    const factory = new module.ModelFactory();
+                                    if (factory.match(context)) {
+                                        matches.push(entry);
+                                        modules = [];
+                                    }
+                                    return nextModule();
+                                });
+                            }
+                            else {
+                                return nextEntry();
+                            }
+                        };
+                        return nextModule();
+                    }
+                    else {
+                        if (matches.length === 0) {
+                            return Promise.resolve(null);
+                        }
+                        // MXNet
+                        if (matches.length === 2 &&
+                            matches.some((e) => e.name.toLowerCase().endsWith('.params')) &&
+                            matches.some((e) => e.name.toLowerCase().endsWith('-symbol.json'))) {
+                            matches = matches.filter((e) => e.name.toLowerCase().endsWith('.params'));
+                        }
+                        // TensorFlow.js
+                        if (matches.length > 0 &&
+                            matches.some((e) => e.name.toLowerCase().endsWith('.bin')) &&
+                            matches.some((e) => e.name.toLowerCase().endsWith('.json'))) {
+                            matches = matches.filter((e) => e.name.toLowerCase().endsWith('.json'));
+                        }
+                        // ncnn
+                        if (matches.length > 0 &&
+                            matches.some((e) => e.name.toLowerCase().endsWith('.bin')) &&
+                            matches.some((e) => e.name.toLowerCase().endsWith('.param'))) {
+                            matches = matches.filter((e) => e.name.toLowerCase().endsWith('.param'));
+                        }
+                        // ncnn
+                        if (matches.length > 0 &&
+                            matches.some((e) => e.name.toLowerCase().endsWith('.bin')) &&
+                            matches.some((e) => e.name.toLowerCase().endsWith('.param.bin'))) {
+                            matches = matches.filter((e) => e.name.toLowerCase().endsWith('.param.bin'));
+                        }
+                        // Paddle
+                        if (matches.length > 0 &&
+                            matches.some((e) => e.name.toLowerCase().endsWith('.pdmodel')) &&
+                            matches.some((e) => e.name.toLowerCase().endsWith('.pdiparams'))) {
+                            matches = matches.filter((e) => e.name.toLowerCase().endsWith('.pdmodel'));
+                        }
+                        // Paddle Lite
+                        if (matches.length > 0 &&
+                            matches.some((e) => e.name.toLowerCase().split('/').pop() === '__model__.nb') &&
+                            matches.some((e) => e.name.toLowerCase().split('/').pop() === 'param.nb')) {
+                            matches = matches.filter((e) => e.name.toLowerCase().split('/').pop() == '__model__.nb');
+                        }
+                        // TensorFlow Bundle
+                        if (matches.length > 1 &&
+                            matches.some((e) => e.name.toLowerCase().endsWith('.data-00000-of-00001'))) {
+                            matches = matches.filter((e) => !e.name.toLowerCase().endsWith('.data-00000-of-00001'));
+                        }
+                        // TensorFlow SavedModel
+                        if (matches.length === 2 &&
+                            matches.some((e) => e.name.toLowerCase().split('/').pop() === 'keras_metadata.pb')) {
+                            matches = matches.filter((e) => e.name.toLowerCase().split('/').pop() !== 'keras_metadata.pb');
+                        }
+                        if (matches.length > 1) {
+                            return Promise.reject(new view.ArchiveError('Archive contains multiple model files.'));
+                        }
+                        const match = matches.shift();
+                        return Promise.resolve(new view.ModelContext(new view.ArchiveContext(this._host, entries, folder, match.name, match.stream)));
+                    }
+                };
+                return nextEntry();
+            };
+            const list = Array.from(entries).map((entry) => {
+                return { name: entry[0], stream: entry[1] };
+            });
+            const files = list.filter((entry) => {
+                if (entry.name.endsWith('/')) {
+                    return false;
+                }
+                if (entry.name.split('/').pop().startsWith('.')) {
+                    return false;
+                }
+                if (!entry.name.startsWith('./') && entry.name.startsWith('.')) {
+                    return false;
+                }
+                return true;
+            });
+            const folder = rootFolder(files.map((entry) => entry.name));
+            const queue = files.slice(0).filter((entry) => entry.name.substring(folder.length).indexOf('/') < 0);
+            return filter(queue).then((context) => {
+                if (context) {
+                    return Promise.resolve(context);
+                }
+                const queue = files.slice(0).filter((entry) => entry.name.substring(folder.length).indexOf('/') >= 0);
+                return filter(queue);
+            });
         }
         catch (error) {
             return Promise.reject(new view.ArchiveError(error.message));
@@ -1725,7 +2019,11 @@ view.ModelFactoryService = class {
         if (identifier.endsWith('.zip') ||
             identifier.endsWith('.tar') ||
             identifier.endsWith('.tar.gz') ||
-            identifier.endsWith('.tgz')) {
+            identifier.endsWith('.tgz') ||
+            identifier.endsWith('.gz') ||
+            identifier.endsWith('.mar') ||
+            identifier.endsWith('.model') ||
+            identifier.endsWith('.mlpackage')) {
             this._host.event('File', 'Accept', extension, 1);
             return true;
         }
@@ -1743,44 +2041,50 @@ view.ModelFactoryService = class {
 
     _openSignature(context) {
         const stream = context.stream;
-        let empty = true;
-        let position = 0;
-        while (empty && position < stream.length) {
-            const buffer = stream.read(Math.min(4096, stream.length - position));
-            position += buffer.length;
-            if (!buffer.every((value) => value === 0x00)) {
-                empty = false;
-                break;
+        if (stream) {
+            let empty = true;
+            let position = 0;
+            while (empty && position < stream.length) {
+                const buffer = stream.read(Math.min(4096, stream.length - position));
+                position += buffer.length;
+                if (!buffer.every((value) => value === 0x00)) {
+                    empty = false;
+                    break;
+                }
             }
-        }
-        stream.seek(0);
-        if (empty) {
-            return Promise.reject(new view.Error('File has no content.', true));
-        }
-        /* eslint-disable no-control-regex */
-        const entries = [
-            { name: 'ELF executable', value: /^\x7FELF/ },
-            { name: 'PNG image', value: /^\x89PNG/ },
-            { name: 'Git LFS header', value: /^version https:\/\/git-lfs.github.com/ },
-            { name: 'Git LFS header', value: /^\s*oid sha256:/ },
-            { name: 'HTML markup', value: /^\s*<html>/ },
-            { name: 'HTML markup', value: /^\s*<!doctype html>/ },
-            { name: 'HTML markup', value: /^\s*<!DOCTYPE html>/ },
-            { name: 'HTML markup', value: /^\s*<!DOCTYPE HTML>/ },
-            { name: 'Unity metadata', value: /^fileFormatVersion:/ },
-            { name: 'Python source code', value: /^\s*import[ ]+(os|sys|types|torch|argparse|onnx|numpy|tensorflow)(,|;|\s)/ },
-            { name: 'Python source code', value: /^\s*import[ ]+([a-z])+[ ]+as[ ]+/ },
-            { name: 'Python source code', value: /^\s*from[ ]+(torch)[ ]+import[ ]+/ },
-            { name: 'undocumented TensorRT engine data', value: /^ptrt/ },
-            { name: 'TSD header', value: /^%TSD-Header-###%/ },
-            { name: "TensorFlow Hub module", value: /^\x08\x03$/, identifier: 'tfhub_module.pb' }
-        ];
-        /* eslint-enable no-control-regex */
-        const buffer = stream.peek(Math.min(4096, stream.length));
-        const text = String.fromCharCode.apply(null, buffer);
-        for (const entry of entries) {
-            if (text.match(entry.value) && (!entry.identifier || entry.identifier === context.identifier)) {
-                return Promise.reject(new view.Error("Invalid file content. File contains " + entry.name + ".", true));
+            stream.seek(0);
+            if (empty) {
+                return Promise.reject(new view.Error('File has no content.', true));
+            }
+            /* eslint-disable no-control-regex */
+            const entries = [
+                { name: 'ELF executable', value: /^\x7FELF/ },
+                { name: 'PNG image', value: /^\x89PNG/ },
+                { name: 'Git LFS header', value: /^version https:\/\/git-lfs.github.com/ },
+                { name: 'Git LFS header', value: /^\s*oid sha256:/ },
+                { name: 'HTML markup', value: /^\s*<html>/ },
+                { name: 'HTML markup', value: /^\s*<!doctype\s*html>/ },
+                { name: 'HTML markup', value: /^\s*<!DOCTYPE\s*html>/ },
+                { name: 'HTML markup', value: /^\s*<!DOCTYPE\s*HTML>/ },
+                { name: 'HTML markup', value: /^\s*<!DOCTYPE\s*HTML\s+(PUBLIC|SYSTEM)?/ },
+                { name: 'Unity metadata', value: /^fileFormatVersion:/ },
+                { name: 'Python source code', value: /^\s*import[ ]+(os|sys|types|torch|argparse|onnx|numpy|tensorflow)(,|;|\s)/ },
+                { name: 'Python source code', value: /^\s*import[ ]+([a-z])+[ ]+as[ ]+/ },
+                { name: 'Python source code', value: /^\s*from[ ]+(torch)[ ]+import[ ]+/ },
+                { name: 'Python source code', value: /^\s*from[ ]+(keras)[ ]+import[ ]+/ },
+                { name: 'Bash script', value: /^#!\/usr\/bin\/env\s/ },
+                { name: 'Bash script', value: /^#!\/bin\/bash\s/ },
+                { name: 'TSD header', value: /^%TSD-Header-###%/ },
+                { name: 'AppleDouble data', value: /^\x00\x05\x16\x07/ },
+                { name: 'TensorFlow Hub module', value: /^\x08\x03$/, identifier: 'tfhub_module.pb' }
+            ];
+            /* eslint-enable no-control-regex */
+            const buffer = stream.peek(Math.min(4096, stream.length));
+            const content = String.fromCharCode.apply(null, buffer);
+            for (const entry of entries) {
+                if (content.match(entry.value) && (!entry.identifier || entry.identifier === context.identifier)) {
+                    return Promise.reject(new view.Error('Invalid file content. File contains ' + entry.name + '.', true));
+                }
             }
         }
         return Promise.resolve(context);

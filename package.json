@@ -6,7 +6,7 @@
         "email": "lutzroeder@users.noreply.github.com",
         "url": "https://www.lutzroeder.com"
     },
-    "version": "4.8.7",
+    "version": "5.3.7",
     "description": "Visualizer for neural network, deep learning, and machine learning models",
     "license": "MIT",
     "repository": "lutzroeder/netron",
@@ -14,18 +14,59 @@
     "scripts": {
         "postinstall": "electron-builder install-app-deps",
         "start": "[ -d node_modules ] || npm install && npx electron .",
-        "server": "[ -d node_modules ] || npm install && python setup.py --quiet build && python -c 'import sys, os; sys.path.insert(0, os.path.join(\"dist\", \"lib\")); import netron; netron.main()' $@"
+        "server": "node ./publish/server.js"
     },
     "dependencies": {
-        "d3": "6.6.2",
-        "dagre": "0.8.5",
-        "electron-updater": "4.3.8"
+        "electron-updater": "4.3.9"
     },
     "devDependencies": {
-        "electron": "12.0.2",
-        "electron-builder": "22.10.5",
-        "electron-notarize": "1.0.0",
-        "eslint": "7.23.0",
-        "xmldom": "0.5.0"
+        "electron": "15.3.1",
+        "electron-builder": "22.13.1",
+        "electron-notarize": "1.1.1",
+        "eslint": "8.2.0"
+    },
+    "eslintConfig": {
+        "env": {
+            "es6": true,
+            "browser": true,
+            "node": true
+        },
+        "extends": "eslint:recommended",
+        "parserOptions": {
+            "ecmaVersion": 2015,
+            "sourceType": "module"
+        },
+        "rules": {
+            "brace-style": [
+                "error",
+                "stroustrup",
+                {
+                    "allowSingleLine": true
+                }
+            ],
+            "indent": [
+                "error",
+                4,
+                {
+                    "SwitchCase": 1
+                }
+            ],
+            "linebreak-style": "off",
+            "no-trailing-spaces": "error",
+            "prefer-const": [
+                "error",
+                {
+                    "destructuring": "all"
+                }
+            ],
+            "semi": [
+                "error",
+                "always"
+            ]
+        },
+        "globals": {
+            "flatbuffers": "readonly",
+            "protobuf": "readonly"
+        }
     }
 }

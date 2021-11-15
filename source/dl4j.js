@@ -9,39 +9,14 @@ dl4j.ModelFactory = class {
 
     match(context) {
         const entries = context.entries('zip');
-        if (dl4j.ModelFactory._openContainer(entries)) {
-            return true;
-        }
-        return false;
+        return dl4j.Container.open(entries);
     }
 
-    open(context) {
-        return Promise.resolve().then(() => {
-            return dl4j.Metadata.open(context).then((metadata) => {
-                const entries = context.entries('zip');
-                const container = dl4j.ModelFactory._openContainer(entries);
-                return new dl4j.Model(metadata, container.configuration, container.coefficients);
-            });
+    open(context, match) {
+        return dl4j.Metadata.open(context).then((metadata) => {
+            const container = match;
+            return new dl4j.Model(metadata, container.configuration, container.coefficients);
         });
-    }
-
-    static _openContainer(entries) {
-        const configurationEntries = entries.filter((entry) => entry.name === 'configuration.json');
-        const coefficientsEntries = entries.filter((entry) => entry.name === 'coefficients.bin');
-        if (configurationEntries.length === 1 && coefficientsEntries.length <= 1) {
-            try {
-                const reader = json.TextReader.create(configurationEntries[0].data);
-                const configuration = reader.read();
-                if (configuration && (configuration.confs || configuration.vertices)) {
-                    const coefficients = coefficientsEntries.length == 1 ? coefficientsEntries[0].data : [];
-                    return { configuration: configuration, coefficients: coefficients };
-                }
-            }
-            catch (error) {
-                // continue regardless of error
-            }
-        }
-        return null;
     }
 };
 
@@ -201,13 +176,12 @@ dl4j.Argument = class {
 dl4j.Node = class {
 
     constructor(metadata, layer, inputs, dataType, variables) {
-
-        this._metadata = metadata;
-        this._type = layer.__type__;
         this._name = layer.layerName || '';
         this._inputs = [];
         this._outputs = [];
         this._attributes = [];
+        const type = layer.__type__;
+        this._type = metadata.type(type) || { name: type };
 
         if (inputs && inputs.length > 0) {
             const args = inputs.map((input) => new dl4j.Argument(input, null, null));
@@ -217,7 +191,7 @@ dl4j.Node = class {
         if (variables) {
             for (const variable of variables) {
                 let tensor = null;
-                switch (this._type) {
+                switch (type) {
                     case 'Convolution':
                         switch (variable) {
                             case 'W':
@@ -302,7 +276,7 @@ dl4j.Node = class {
                 case 'hasBias':
                     continue;
             }
-            this._attributes.push(new dl4j.Attribute(metadata.attribute(this._type, key), key, attributes[key]));
+            this._attributes.push(new dl4j.Attribute(metadata.attribute(type, key), key, attributes[key]));
         }
 
         if (layer.idropout) {
@@ -319,10 +293,6 @@ dl4j.Node = class {
 
     get name() {
         return this._name;
-    }
-
-    get metadata() {
-        return this._metadata.type(this._type);
     }
 
     get inputs() {
@@ -393,6 +363,7 @@ dl4j.Attribute = class {
         return this._visible;
     }
 };
+
 dl4j.Tensor = class {
 
     constructor(dataType, shape) {
@@ -404,7 +375,7 @@ dl4j.Tensor = class {
     }
 
     get state() {
-        return 'Not implemented.';
+        return 'Tensor data not implemented.';
     }
 };
 
@@ -452,7 +423,6 @@ dl4j.TensorShape = class {
 dl4j.Metadata = class {
 
     static open(context) {
-        dl4j.Metadata.textDecoder = dl4j.Metadata.textDecoder || new TextDecoder('utf-8');
         if (dl4j.Metadata._metadata) {
             return Promise.resolve(dl4j.Metadata._metadata);
         }
@@ -467,7 +437,7 @@ dl4j.Metadata = class {
 
     constructor(data) {
         this._map = new Map();
-        this._attributeCache = {};
+        this._attributes = new Map();
         if (data) {
             const metadata = JSON.parse(data);
             this._map = new Map(metadata.map((item) => [ item.name, item ]));
@@ -479,18 +449,53 @@ dl4j.Metadata = class {
     }
 
     attribute(type, name) {
-        let map = this._attributeCache[type];
-        if (!map) {
-            map = {};
-            const schema = this.type(type);
-            if (schema && schema.attributes && schema.attributes.length > 0) {
-                for (const attribute of schema.attributes) {
-                    map[attribute.name] = attribute;
+        const key = type + ':' + name;
+        if (!this._attributes.has(key)) {
+            const metadata = this.type(type);
+            if (metadata && metadata.attributes && metadata.attributes.length > 0) {
+                for (const attribute of metadata.attributes) {
+                    this._attributes.set(type + ':' + attribute.name, attribute);
                 }
             }
-            this._attributeCache[type] = map;
+            if (!this._attributes.has(key)) {
+                this._attributes.set(key, null);
+            }
         }
-        return map[name] || null;
+        return this._attributes.get(key);
+    }
+};
+
+dl4j.Container = class {
+
+    static open(entries) {
+        const stream = entries.get('configuration.json');
+        const coefficients = entries.get('coefficients.bin');
+        if (stream) {
+            try {
+                const reader = json.TextReader.open(stream);
+                const configuration = reader.read();
+                if (configuration && (configuration.confs || configuration.vertices)) {
+                    return new dl4j.Container(configuration, coefficients ? coefficients.peek() : []);
+                }
+            }
+            catch (error) {
+                // continue regardless of error
+            }
+        }
+        return undefined;
+    }
+
+    constructor(configuration, coefficients) {
+        this._configuration = configuration;
+        this._coefficients = coefficients;
+    }
+
+    get configuration() {
+        return this._configuration;
+    }
+
+    get coefficients() {
+        return this._coefficients;
     }
 };
 
@@ -544,6 +549,7 @@ dl4j.BinaryReader = class {
         this._buffer = buffer;
         this._position = 0;
         this._view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+        this._decoder = new TextDecoder('ascii');
     }
 
     bytes(size) {
@@ -555,7 +561,7 @@ dl4j.BinaryReader = class {
     string() {
         const size = this._buffer[this._position++] << 8 | this._buffer[this._position++];
         const buffer = this.bytes(size);
-        return new TextDecoder('ascii').decode(buffer);
+        return this._decoder.decode(buffer);
     }
 
     int32() {

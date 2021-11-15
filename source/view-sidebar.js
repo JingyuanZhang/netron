@@ -55,19 +55,20 @@ sidebar.Sidebar = class {
     }
 
     _hide() {
-        const sidebarElement = this._getElementById('sidebar');
-        if (sidebarElement) {
-            sidebarElement.style.width = '0';
+        const sidebar = this._getElementById('sidebar');
+        if (sidebar) {
+            sidebar.style.width = '0px';
         }
-        const graphElement = this._getElementById('graph');
-        if (graphElement) {
-            graphElement.style.marginRight = '0';
+        const graph = this._getElementById('graph');
+        if (graph) {
+            graph.style.marginRight = '0px';
+            graph.focus();
         }
     }
 
     _deactivate() {
-        const sidebarElement = this._getElementById('sidebar');
-        if (sidebarElement) {
+        const sidebar = this._getElementById('sidebar');
+        if (sidebar) {
             const closeButton = this._getElementById('sidebar-closebutton');
             if (closeButton) {
                 closeButton.removeEventListener('click', this._closeSidebarHandler);
@@ -80,14 +81,14 @@ sidebar.Sidebar = class {
 
     _activate(item) {
         const width = 'min(calc(100vw * 0.6), 500px)';
-        const sidebarElement = this._getElementById('sidebar');
-        if (sidebarElement) {
-            sidebarElement.innerHTML = '';
+        const sidebar = this._getElementById('sidebar');
+        if (sidebar) {
+            sidebar.innerHTML = '';
 
-            const titleElement = this._host.document.createElement('h1');
-            titleElement.classList.add('sidebar-title');
-            titleElement.innerHTML = item.title ? item.title.toUpperCase() : '';
-            sidebarElement.appendChild(titleElement);
+            const title = this._host.document.createElement('h1');
+            title.classList.add('sidebar-title');
+            title.innerHTML = item.title ? item.title.toUpperCase() : '';
+            sidebar.appendChild(title);
 
             const closeButton = this._host.document.createElement('a');
             closeButton.classList.add('sidebar-closebutton');
@@ -95,31 +96,31 @@ sidebar.Sidebar = class {
             closeButton.setAttribute('href', 'javascript:void(0)');
             closeButton.innerHTML = '&times;';
             closeButton.addEventListener('click', this._closeSidebarHandler);
-            sidebarElement.appendChild(closeButton);
+            sidebar.appendChild(closeButton);
 
-            const contentElement = this._host.document.createElement('div');
-            contentElement.classList.add('sidebar-content');
-            contentElement.setAttribute('id', 'sidebar-content');
-            sidebarElement.appendChild(contentElement);
+            const content = this._host.document.createElement('div');
+            content.classList.add('sidebar-content');
+            content.setAttribute('id', 'sidebar-content');
+            sidebar.appendChild(content);
 
-            if (typeof content == 'string') {
-                contentElement.innerHTML = item.content;
+            if (typeof item.content == 'string') {
+                content.innerHTML = item.content;
             }
             else if (item.content instanceof Array) {
                 for (const element of item.content) {
-                    contentElement.appendChild(element);
+                    content.appendChild(element);
                 }
             }
             else {
-                contentElement.appendChild(item.content);
+                content.appendChild(item.content);
             }
 
-            sidebarElement.style.width = width;
+            sidebar.style.width = width;
             this._host.document.addEventListener('keydown', this._closeSidebarKeyDownHandler);
         }
-        const graphElement = this._getElementById('graph');
-        if (graphElement) {
-            graphElement.style.marginRight = width;
+        const graph = this._getElementById('graph');
+        if (graph) {
+            graph.style.marginRight = width;
         }
     }
 };
@@ -136,14 +137,18 @@ sidebar.NodeSidebar = class {
 
         if (node.type) {
             let showDocumentation = null;
-            if (node.metadata) {
+            const type = node.type;
+            if (type && (type.description || type.inputs || type.outputs || type.attributes)) {
                 showDocumentation = {};
-                showDocumentation.text = '?';
+                showDocumentation.text = type.nodes ? '\u0192': '?';
                 showDocumentation.callback = () => {
                     this._raise('show-documentation', null);
                 };
             }
-            this._addProperty('type', new sidebar.ValueTextView(this._host, node.type, showDocumentation));
+            this._addProperty('type', new sidebar.ValueTextView(this._host, node.type.name, showDocumentation));
+            if (node.type.module) {
+                this._addProperty('module', new sidebar.ValueTextView(this._host, node.type.module));
+            }
         }
 
         if (node.name) {
@@ -152,10 +157,6 @@ sidebar.NodeSidebar = class {
 
         if (node.location) {
             this._addProperty('location', new sidebar.ValueTextView(this._host, node.location));
-        }
-
-        if (node.domain) {
-            this._addProperty('domain', new sidebar.ValueTextView(this._host, node.domain));
         }
 
         if (node.description) {
@@ -218,9 +219,13 @@ sidebar.NodeSidebar = class {
     }
 
     _addAttribute(name, attribute) {
-        const item = new sidebar.NameValueView(this._host, name, new NodeAttributeView(this._host, attribute));
-        this._attributes.push(item);
-        this._elements.push(item.render());
+        const item = new NodeAttributeView(this._host, attribute);
+        item.on('show-graph', (sender, graph) => {
+            this._raise('show-graph', graph);
+        });
+        const view = new sidebar.NameValueView(this._host, name, item);
+        this._attributes.push(view);
+        this._elements.push(view.render());
     }
 
     _addInput(name, input) {
@@ -282,16 +287,23 @@ sidebar.NodeSidebar = class {
             case 'shape':
                 return value ? value.toString() : '(null)';
             case 'shape[]':
+                if (value && !Array.isArray(value)) {
+                    throw new Error("Invalid shape '" + JSON.stringify(value) + "'.");
+                }
                 return value ? value.map((item) => item.toString()).join(', ') : '(null)';
             case 'graph':
-                return value ? value.toString() : '(null)';
+                return value ? value.name : '(null)';
             case 'graph[]':
-                return value ? value.map((item) => item.toString()).join(', ') : '(null)';
+                return value ? value.map((graph) => graph.name).join(', ') : '(null)';
             case 'tensor':
                 if (value && value.type && value.type.shape && value.type.shape.dimensions && value.type.shape.dimensions.length == 0) {
                     return value.toString();
                 }
                 return '[...]';
+            case 'function':
+                return value.name;
+            case 'function[]':
+                return value ? value.map((item) => item.name).join(', ') : '(null)';
         }
         if (typeof value === 'string' && (!type || type != 'string')) {
             return quote ? '"' + value + '"' : value;
@@ -462,10 +474,15 @@ sidebar.ValueTextView = class {
             element.appendChild(this._action);
         }
 
-        const line = this._host.document.createElement('div');
-        line.className = 'sidebar-view-item-value-line';
-        line.innerText = value;
-        element.appendChild(line);
+        const list = Array.isArray(value) ? value : [ value ];
+        let className = 'sidebar-view-item-value-line';
+        for (const item of list) {
+            const line = this._host.document.createElement('div');
+            line.className = className;
+            line.innerText = item;
+            element.appendChild(line);
+            className = 'sidebar-view-item-value-line-border';
+        }
     }
 
     render() {
@@ -484,7 +501,8 @@ class NodeAttributeView {
         this._element = this._host.document.createElement('div');
         this._element.className = 'sidebar-view-item-value';
 
-        if (attribute.type) {
+        const type = this._attribute.type;
+        if (type) {
             this._expander = this._host.document.createElement('div');
             this._expander.className = 'sidebar-view-item-value-expander';
             this._expander.innerText = '+';
@@ -493,17 +511,33 @@ class NodeAttributeView {
             });
             this._element.appendChild(this._expander);
         }
-        let value = sidebar.NodeSidebar.formatAttributeValue(this._attribute.value, this._attribute.type);
-        if (value && value.length > 1000) {
-            value = value.substring(0, 1000) + '\u2026';
+        const value = this._attribute.value;
+        switch (type) {
+            case 'graph':
+            case 'function': {
+                const line = this._host.document.createElement('div');
+                line.className = 'sidebar-view-item-value-line-link';
+                line.innerHTML = value.name;
+                line.addEventListener('click', () => {
+                    this._raise('show-graph', value);
+                });
+                this._element.appendChild(line);
+                break;
+            }
+            default: {
+                let content = sidebar.NodeSidebar.formatAttributeValue(value, type);
+                if (content && content.length > 1000) {
+                    content = content.substring(0, 1000) + '\u2026';
+                }
+                if (content && typeof text === 'string') {
+                    content = content.split('<').join('&lt;').split('>').join('&gt;');
+                }
+                const line = this._host.document.createElement('div');
+                line.className = 'sidebar-view-item-value-line';
+                line.innerHTML = content ? content : '&nbsp;';
+                this._element.appendChild(line);
+            }
         }
-        if (value && typeof value === 'string') {
-            value = value.split('<').join('&lt;').split('>').join('&gt;');
-        }
-        const valueLine = this._host.document.createElement('div');
-        valueLine.className = 'sidebar-view-item-value-line';
-        valueLine.innerHTML = (value ? value : '&nbsp;');
-        this._element.appendChild(valueLine);
     }
 
     render() {
@@ -549,6 +583,20 @@ class NodeAttributeView {
             this._expander.innerText = '+';
             while (this._element.childElementCount > 2) {
                 this._element.removeChild(this._element.lastChild);
+            }
+        }
+    }
+
+    on(event, callback) {
+        this._events = this._events || {};
+        this._events[event] = this._events[event] || [];
+        this._events[event].push(callback);
+    }
+
+    _raise(event, data) {
+        if (this._events && this._events[event]) {
+            for (const callback of this._events[event]) {
+                callback(this, data);
             }
         }
     }
@@ -628,7 +676,8 @@ sidebar.ArgumentView = class {
         let name = this._argument.name || '';
         this._hasId = name ? true : false;
         this._hasKind = initializer && initializer.kind ? true : false;
-        if (this._hasId) {
+        if (this._hasId || (!this._hasKind && !type)) {
+            this._hasId = true;
             const nameLine = this._host.document.createElement('div');
             nameLine.className = 'sidebar-view-item-value-line';
             if (typeof name !== 'string') {
@@ -770,52 +819,54 @@ sidebar.ModelSidebar = class {
         this._model = model;
         this._elements = [];
 
-        if (this._model.format) {
-            this._addProperty('format', new sidebar.ValueTextView(this._host, this._model.format));
+        if (model.format) {
+            this._addProperty('format', new sidebar.ValueTextView(this._host, model.format));
         }
-        if (this._model.producer) {
-            this._addProperty('producer', new sidebar.ValueTextView(this._host, this._model.producer));
+        if (model.producer) {
+            this._addProperty('producer', new sidebar.ValueTextView(this._host, model.producer));
         }
-        if (this._model.source) {
-            this._addProperty('source', new sidebar.ValueTextView(this._host, this._model.source));
+        if (model.source) {
+            this._addProperty('source', new sidebar.ValueTextView(this._host, model.source));
         }
-        if (this._model.name) {
-            this._addProperty('name', new sidebar.ValueTextView(this._host, this._model.name));
+        if (model.name) {
+            this._addProperty('name', new sidebar.ValueTextView(this._host, model.name));
         }
-        if (this._model.version) {
-            this._addProperty('version', new sidebar.ValueTextView(this._host, this._model.version));
+        if (model.version) {
+            this._addProperty('version', new sidebar.ValueTextView(this._host, model.version));
         }
-        if (this._model.description) {
-            this._addProperty('description', new sidebar.ValueTextView(this._host, this._model.description));
+        if (model.description) {
+            this._addProperty('description', new sidebar.ValueTextView(this._host, model.description));
         }
-        if (this._model.author) {
-            this._addProperty('author', new sidebar.ValueTextView(this._host, this._model.author));
+        if (model.author) {
+            this._addProperty('author', new sidebar.ValueTextView(this._host, model.author));
         }
-        if (this._model.company) {
-            this._addProperty('company', new sidebar.ValueTextView(this._host, this._model.company));
+        if (model.company) {
+            this._addProperty('company', new sidebar.ValueTextView(this._host, model.company));
         }
-        if (this._model.license) {
-            this._addProperty('license', new sidebar.ValueTextView(this._host, this._model.license));
+        if (model.license) {
+            this._addProperty('license', new sidebar.ValueTextView(this._host, model.license));
         }
-        if (this._model.domain) {
-            this._addProperty('domain', new sidebar.ValueTextView(this._host, this._model.domain));
+        if (model.domain) {
+            this._addProperty('domain', new sidebar.ValueTextView(this._host, model.domain));
         }
-        if (this._model.imports) {
-            this._addProperty('imports', new sidebar.ValueTextView(this._host, this._model.imports));
+        if (model.imports) {
+            this._addProperty('imports', new sidebar.ValueTextView(this._host, model.imports));
         }
-        if (this._model.runtime) {
-            this._addProperty('runtime', new sidebar.ValueTextView(this._host, this._model.runtime));
+        if (model.runtime) {
+            this._addProperty('runtime', new sidebar.ValueTextView(this._host, model.runtime));
         }
 
-        const metadata = this._model.metadata;
+        const metadata = model.metadata;
         if (metadata) {
-            for (const property of this._model.metadata) {
+            for (const property of model.metadata) {
                 this._addProperty(property.name, new sidebar.ValueTextView(this._host, property.value));
             }
         }
 
-        if (this._model._graphs.length > 1) {
-            const graphSelector = new sidebar.SelectView(this._host, this._model.graphs.map((g) => g.name), graph.name);
+        const graphs = Array.isArray(model.graphs) ? model.graphs : [];
+        if (graphs.length > 1) {
+            const name = graph && graph.name ? graph.name : '';
+            const graphSelector = new sidebar.SelectView(this._host, model.graphs.map((g) => g.name), name);
             graphSelector.on('change', (sender, data) => {
                 this._raise('update-active-graph', data);
             });
@@ -835,15 +886,13 @@ sidebar.ModelSidebar = class {
             if (graph.description) {
                 this._addProperty('description', new sidebar.ValueTextView(this._host, graph.description));
             }
-
-            if (graph.inputs.length > 0) {
+            if (Array.isArray(graph.inputs) && graph.inputs.length > 0) {
                 this._addHeader('Inputs');
                 for (const input of graph.inputs) {
                     this.addArgument(input.name, input);
                 }
             }
-
-            if (graph.outputs.length > 0) {
+            if (Array.isArray(graph.outputs) && graph.outputs.length > 0) {
                 this._addHeader('Outputs');
                 for (const output of graph.outputs) {
                     this.addArgument(output.name, output);
@@ -905,80 +954,80 @@ sidebar.DocumentationSidebar = class {
         if (!this._elements) {
             this._elements = [];
 
-            const documentation = sidebar.DocumentationSidebar.formatDocumentation(this._metadata);
+            const type = sidebar.DocumentationSidebar.formatDocumentation(this._metadata);
 
             const element = this._host.document.createElement('div');
             element.setAttribute('class', 'sidebar-view-documentation');
 
-            this._append(element, 'h1', documentation.name);
+            this._append(element, 'h1', type.name);
 
-            if (documentation.summary) {
-                this._append(element, 'p', documentation.summary);
+            if (type.summary) {
+                this._append(element, 'p', type.summary);
             }
 
-            if (documentation.description) {
-                this._append(element, 'p', documentation.description);
+            if (type.description) {
+                this._append(element, 'p', type.description);
             }
 
-            if (documentation.attributes) {
+            if (Array.isArray(type.attributes) && type.attributes.length > 0) {
                 this._append(element, 'h2', 'Attributes');
                 const attributes = this._append(element, 'dl');
-                for (const attribute of documentation.attributes) {
+                for (const attribute of type.attributes) {
                     this._append(attributes, 'dt', attribute.name + (attribute.type ? ': <tt>' + attribute.type + '</tt>' : ''));
                     this._append(attributes, 'dd', attribute.description);
                 }
                 element.appendChild(attributes);
             }
 
-            if (documentation.inputs) {
-                this._append(element, 'h2', 'Inputs' + (documentation.inputs_range ? ' (' + documentation.inputs_range + ')' : ''));
+            if (Array.isArray(type.inputs) && type.inputs.length > 0) {
+                this._append(element, 'h2', 'Inputs' + (type.inputs_range ? ' (' + type.inputs_range + ')' : ''));
                 const inputs = this._append(element, 'dl');
-                for (const input of documentation.inputs) {
+                for (const input of type.inputs) {
                     this._append(inputs, 'dt', input.name + (input.type ? ': <tt>' + input.type + '</tt>' : '') + (input.option ? ' (' + input.option + ')' : ''));
                     this._append(inputs, 'dd', input.description);
                 }
             }
 
-            if (documentation.outputs) {
-                this._append(element, 'h2', 'Outputs' + (documentation.outputs_range ? ' (' + documentation.outputs_range + ')' : ''));
+            if (Array.isArray(type.outputs) && type.outputs.length > 0) {
+                this._append(element, 'h2', 'Outputs' + (type.outputs_range ? ' (' + type.outputs_range + ')' : ''));
                 const outputs = this._append(element, 'dl');
-                for (const output of documentation.outputs) {
+                for (const output of type.outputs) {
                     this._append(outputs, 'dt', output.name + (output.type ? ': <tt>' + output.type + '</tt>' : '') + (output.option ? ' (' + output.option + ')' : ''));
                     this._append(outputs, 'dd', output.description);
                 }
             }
 
-            if (documentation.type_constraints) {
+            if (Array.isArray(type.type_constraints) && type.type_constraints.length > 0) {
                 this._append(element, 'h2', 'Type Constraints');
                 const type_constraints = this._append(element, 'dl');
-                for (const type_constraint of documentation.type_constraints) {
+                for (const type_constraint of type.type_constraints) {
                     this._append(type_constraints, 'dt', type_constraint.type_param_str + ': ' + type_constraint.allowed_type_strs.map((item) => '<tt>' + item + '</tt>').join(', '));
                     this._append(type_constraints, 'dd', type_constraint.description);
                 }
             }
 
-            if (documentation.examples) {
+            if (Array.isArray(type.examples) && type.examples.length > 0) {
                 this._append(element, 'h2', 'Examples');
-                for (const example of documentation.examples) {
+                for (const example of type.examples) {
                     this._append(element, 'h3', example.summary);
                     this._append(element, 'pre', example.code);
                 }
             }
 
-            if (documentation.references) {
+            if (Array.isArray(type.references) && type.references.length > 0) {
                 this._append(element, 'h2', 'References');
                 const references = this._append(element, 'ul');
-                for (const reference of documentation.references) {
+                for (const reference of type.references) {
                     this._append(references, 'li', reference.description);
                 }
             }
 
-            if (documentation.domain && documentation.version && documentation.support_level) {
+            if (type.domain && type.version && type.support_level) {
                 this._append(element, 'h2', 'Support');
-                this._append(element, 'dl', 'In domain <tt>' + documentation.domain + '</tt> since version <tt>' + documentation.version + '</tt> at support level <tt>' + documentation.support_level + '</tt>.');
+                this._append(element, 'dl', 'In domain <tt>' + type.domain + '</tt> since version <tt>' + type.version + '</tt> at support level <tt>' + type.support_level + '</tt>.');
             }
 
-            if (!this._host.browser) {
+            if (!this._host.type !== 'Electron') {
                 element.addEventListener('click', (e) => {
                     if (e.target && e.target.href) {
                         const link = e.target.href;
@@ -1022,45 +1071,187 @@ sidebar.DocumentationSidebar = class {
         return element;
     }
 
-    static formatDocumentation(data) {
-        if (data) {
-            data = JSON.parse(JSON.stringify(data));
+    static formatDocumentation(source) {
+        if (source) {
             const generator = new markdown.Generator();
-            if (data.summary) {
-                data.summary = generator.html(data.summary);
+            const target = {};
+            if (source.name !== undefined) {
+                target.name = source.name;
             }
-            if (data.description) {
-                data.description = generator.html(data.description);
+            if (source.module !== undefined) {
+                target.module = source.module;
             }
-            if (data.attributes) {
-                for (const attribute of data.attributes) {
-                    if (attribute.description) {
-                        attribute.description = generator.html(attribute.description);
+            if (source.category !== undefined) {
+                target.category = source.category;
+            }
+            if (source.summary !== undefined) {
+                target.summary = generator.html(source.summary);
+            }
+            if (source.description !== undefined) {
+                target.description = generator.html(source.description);
+            }
+            if (Array.isArray(source.attributes)) {
+                target.attributes = source.attributes.map((source) => {
+                    const target = {};
+                    target.name = source.name;
+                    if (source.type !== undefined) {
+                        target.type = source.type;
                     }
-                }
-            }
-            if (data.inputs) {
-                for (const input of data.inputs) {
-                    if (input.description) {
-                        input.description = generator.html(input.description);
+                    if (source.option !== undefined) {
+                        target.option = source.option;
                     }
-                }
-            }
-            if (data.outputs) {
-                for (const output of data.outputs) {
-                    if (output.description) {
-                        output.description = generator.html(output.description);
+                    if (source.optional !== undefined) {
+                        target.optional = source.optional;
                     }
-                }
-            }
-            if (data.references) {
-                for (const reference of data.references) {
-                    if (reference) {
-                        reference.description = generator.html(reference.description);
+                    if (source.required !== undefined) {
+                        target.required = source.required;
                     }
-                }
+                    if (source.minimum !== undefined) {
+                        target.minimum = source.minimum;
+                    }
+                    if (source.src !== undefined) {
+                        target.src = source.src;
+                    }
+                    if (source.src_type !== undefined) {
+                        target.src_type = source.src_type;
+                    }
+                    if (source.description !== undefined) {
+                        target.description = generator.html(source.description);
+                    }
+                    if (source.default !== undefined) {
+                        target.default = source.default;
+                    }
+                    if (source.visible !== undefined) {
+                        target.visible = source.visible;
+                    }
+                    return target;
+                });
             }
-            return data;
+            if (Array.isArray(source.inputs)) {
+                target.inputs = source.inputs.map((source) => {
+                    const target = {};
+                    target.name = source.name;
+                    if (source.type !== undefined) {
+                        target.type = source.type;
+                    }
+                    if (source.description !== undefined) {
+                        target.description = generator.html(source.description);
+                    }
+                    if (source.default !== undefined) {
+                        target.default = source.default;
+                    }
+                    if (source.src !== undefined) {
+                        target.src = source.src;
+                    }
+                    if (source.list !== undefined) {
+                        target.list = source.list;
+                    }
+                    if (source.isRef !== undefined) {
+                        target.isRef = source.isRef;
+                    }
+                    if (source.typeAttr !== undefined) {
+                        target.typeAttr = source.typeAttr;
+                    }
+                    if (source.numberAttr !== undefined) {
+                        target.numberAttr = source.numberAttr;
+                    }
+                    if (source.typeListAttr !== undefined) {
+                        target.typeListAttr = source.typeListAttr;
+                    }
+                    if (source.option !== undefined) {
+                        target.option = source.option;
+                    }
+                    if (source.optional !== undefined) {
+                        target.optional = source.optional;
+                    }
+                    if (source.visible !== undefined) {
+                        target.visible = source.visible;
+                    }
+                    return target;
+                });
+            }
+            if (Array.isArray(source.outputs)) {
+                target.outputs = source.outputs.map((source) => {
+                    const target = {};
+                    target.name = source.name;
+                    if (source.type) {
+                        target.type = source.type;
+                    }
+                    if (source.description !== undefined) {
+                        target.description = generator.html(source.description);
+                    }
+                    if (source.list !== undefined) {
+                        target.list = source.list;
+                    }
+                    if (source.typeAttr !== undefined) {
+                        target.typeAttr = source.typeAttr;
+                    }
+                    if (source.typeListAttr !== undefined) {
+                        target.typeListAttr = source.typeAttr;
+                    }
+                    if (source.numberAttr !== undefined) {
+                        target.numberAttr = source.numberAttr;
+                    }
+                    if (source.isRef !== undefined) {
+                        target.isRef = source.isRef;
+                    }
+                    if (source.option !== undefined) {
+                        target.option = source.option;
+                    }
+                    return target;
+                });
+            }
+            if (Array.isArray(source.references)) {
+                target.references = source.references.map((source) => {
+                    if (source) {
+                        target.description = generator.html(source.description);
+                    }
+                    return target;
+                });
+            }
+            if (source.version !== undefined) {
+                target.version = source.version;
+            }
+            if (source.operator !== undefined) {
+                target.operator = source.operator;
+            }
+            if (source.identifier !== undefined) {
+                target.identifier = source.identifier;
+            }
+            if (source.package !== undefined) {
+                target.package = source.package;
+            }
+            if (source.support_level !== undefined) {
+                target.support_level = source.support_level;
+            }
+            if (source.min_input !== undefined) {
+                target.min_input = source.min_input;
+            }
+            if (source.max_input !== undefined) {
+                target.max_input = source.max_input;
+            }
+            if (source.min_output !== undefined) {
+                target.min_output = source.min_output;
+            }
+            if (source.max_input !== undefined) {
+                target.max_output = source.max_output;
+            }
+            if (source.inputs_range !== undefined) {
+                target.inputs_range = source.inputs_range;
+            }
+            if (source.outputs_range !== undefined) {
+                target.outputs_range = source.outputs_range;
+            }
+            if (source.examples !== undefined) {
+                target.examples = source.examples;
+            }
+            if (source.constants !== undefined) {
+                target.constants = source.constants;
+            }
+            if (source.type_constraints !== undefined) {
+                target.type_constraints = source.type_constraints;
+            }
+            return target;
         }
         return '';
     }
@@ -1155,68 +1346,94 @@ sidebar.FindSidebar = class {
             this._resultElement.removeChild(this._resultElement.lastChild);
         }
 
-        const text = searchText.toLowerCase();
+        const terms = searchText.trim().toLowerCase().split(' ').map((term) => term.trim()).filter((term) => term.length > 0);
 
-        const nodeMatches = new Set();
-        const edgeMatches = new Set();
+        const nodes = new Set();
+        const edges = new Set();
 
-        for (const node of this._graph.nodes) {
-
+        for (const v of this._graph.nodes()) {
+            const node = this._graph.node(v);
             const initializers = [];
-
-            for (const input of node.inputs) {
-                for (const argument of input.arguments) {
-                    const match =
-                        (argument.name && argument.name.toLowerCase().indexOf(text) != -1) ||
-                        (argument.type && argument.type.dataType && argument.type.dataType.toLowerCase() === text) ||
-                        (argument.type && argument.type.shape && argument.type.shape.dimensions && argument.type.shape.dimensions.some((dimension) => dimension && dimension.toString() === text)) ||
-                        (argument.type && argument.type.shape && argument.type.shape.dimensions && (argument.type.shape.toString() === text || argument.type.shape.toString() === '[' + text + ']'));
-                    if (match && !edgeMatches.has(argument.name)) {
-                        if (!argument.initializer) {
-                            const inputItem = this._host.document.createElement('li');
-                            inputItem.innerText = '\u2192 ' + argument.name.split('\n').shift(); // custom argument id
-                            inputItem.id = 'edge-' + argument.name;
-                            this._resultElement.appendChild(inputItem);
-                            edgeMatches.add(argument.name);
-                        }
-                        else {
-                            initializers.push(argument);
+            if (node.class === 'graph-node' || node.class === 'graph-input') {
+                for (const input of node.inputs) {
+                    for (const argument of input.arguments) {
+                        if (argument.name && !edges.has(argument.name)) {
+                            const match = (argument, term) => {
+                                if (argument.name && argument.name.toLowerCase().indexOf(term) !== -1) {
+                                    return true;
+                                }
+                                if (argument.type) {
+                                    if (argument.type.dataType && term === argument.type.dataType.toLowerCase()) {
+                                        return true;
+                                    }
+                                    if (argument.type.shape) {
+                                        if (term === argument.type.shape.toString().toLowerCase()) {
+                                            return true;
+                                        }
+                                        if (argument.type.shape && Array.isArray(argument.type.shape.dimensions)) {
+                                            const dimensions = argument.type.shape.dimensions.map((dimension) => dimension ? dimension.toString().toLowerCase() : '');
+                                            if (term === dimensions.join(',')) {
+                                                return true;
+                                            }
+                                            if (dimensions.some((dimension) => term === dimension)) {
+                                                return true;
+                                            }
+                                        }
+                                    }
+                                }
+                                return false;
+                            };
+                            if (terms.every((term) => match(argument, term))) {
+                                if (!argument.initializer) {
+                                    const inputItem = this._host.document.createElement('li');
+                                    inputItem.innerText = '\u2192 ' + argument.name.split('\n').shift(); // custom argument id
+                                    inputItem.id = 'edge-' + argument.name;
+                                    this._resultElement.appendChild(inputItem);
+                                    edges.add(argument.name);
+                                }
+                                else {
+                                    initializers.push(argument);
+                                }
+                            }
                         }
                     }
                 }
             }
-
-            const name = node.name;
-            const operator = node.type;
-            if (!nodeMatches.has(name) && name &&
-                ((name.toLowerCase().indexOf(text) != -1) ||
-                (operator && operator.toLowerCase().indexOf(text) != -1))) {
-                const nameItem = this._host.document.createElement('li');
-                nameItem.innerText = '\u25A2 ' + node.name;
-                nameItem.id = 'node-name-' + node.name;
-                this._resultElement.appendChild(nameItem);
-                nodeMatches.add(node.name);
+            if (node.class === 'graph-node') {
+                const name = node.value.name;
+                const type = node.value.type.name;
+                if (!nodes.has(node.id) &&
+                    ((name && terms.some((term) => name.toLowerCase().indexOf(term) != -1) ||
+                     (type && terms.some((term) => type.toLowerCase().indexOf(term) != -1))))) {
+                    const nameItem = this._host.document.createElement('li');
+                    nameItem.innerText = '\u25A2 ' + (name || '[' + type + ']');
+                    nameItem.id = node.id;
+                    this._resultElement.appendChild(nameItem);
+                    nodes.add(node.id);
+                }
             }
-
             for (const argument of initializers) {
                 if (argument.name) {
                     const initializeItem = this._host.document.createElement('li');
-                    initializeItem.innerText = '\u25A0 ' + argument.name;
+                    initializeItem.innerText = '\u25A0 ' + argument.name.split('\n').shift(); // custom argument id
                     initializeItem.id = 'initializer-' + argument.name;
                     this._resultElement.appendChild(initializeItem);
                 }
             }
         }
 
-        for (const node of this._graph.nodes) {
-            for (const output of node.outputs) {
-                for (const argument of output.arguments) {
-                    if (argument.name && argument.name.toLowerCase().indexOf(text) != -1 && !edgeMatches.has(argument.name)) {
-                        const outputItem = this._host.document.createElement('li');
-                        outputItem.innerText = '\u2192 ' + argument.name.split('\n').shift(); // custom argument id
-                        outputItem.id = 'edge-' + argument.name;
-                        this._resultElement.appendChild(outputItem);
-                        edgeMatches.add(argument.name);
+        for (const v of this._graph.nodes()) {
+            const node = this._graph.node(v);
+            if (node.class === 'graph-node' || node.class === 'graph-output') {
+                for (const output of node.outputs) {
+                    for (const argument of output.arguments) {
+                        if (argument.name && !edges.has(argument.name) && terms.every((term) => argument.name.toLowerCase().indexOf(term) != -1)) {
+                            const outputItem = this._host.document.createElement('li');
+                            outputItem.innerText = '\u2192 ' + argument.name.split('\n').shift(); // custom argument id
+                            outputItem.id = 'edge-' + argument.name;
+                            this._resultElement.appendChild(outputItem);
+                            edges.add(argument.name);
+                        }
                     }
                 }
             }
@@ -1322,16 +1539,16 @@ markdown.Generator = class {
             if (match) {
                 source = source.substring(match[0].length);
                 const language = match[2] ? match[2].trim() : match[2];
-                let text = match[3] || '';
+                let content = match[3] || '';
                 const matchIndent = match[0].match(/^(\s+)(?:```)/);
                 if (matchIndent !== null) {
                     const indent = matchIndent[1];
-                    text = text.split('\n').map(node => {
+                    content = content.split('\n').map(node => {
                         const match = node.match(/^\s+/);
                         return (match !== null && match[0].length >= indent.length) ? node.slice(indent.length) : node;
                     }).join('\n');
                 }
-                tokens.push({ type: 'code', language: language, text: text });
+                tokens.push({ type: 'code', language: language, text: content });
                 continue;
             }
             match = this._headingRegExp.exec(source);
@@ -1656,11 +1873,11 @@ markdown.Generator = class {
             match = this._codespanRegExp.exec(source);
             if (match) {
                 source = source.substring(match[0].length);
-                let text = match[2].replace(/\n/g, ' ');
-                if (/[^ ]/.test(text) && text.startsWith(' ') && text.endsWith(' ')) {
-                    text = text.substring(1, text.length - 1);
+                let content = match[2].replace(/\n/g, ' ');
+                if (/[^ ]/.test(content) && content.startsWith(' ') && content.endsWith(' ')) {
+                    content = content.substring(1, content.length - 1);
                 }
-                tokens.push({ type: 'codespan', text: this._encode(text) });
+                tokens.push({ type: 'codespan', text: this._encode(content) });
                 continue;
             }
             match = this._brRegExp.exec(source);
@@ -1960,18 +2177,18 @@ markdown.Generator = class {
         return slug;
     }
 
-    _encode(text) {
-        if (this._escapeTestRegExp.test(text)) {
-            return text.replace(this._escapeReplaceRegExp, (ch) => this._escapeReplacementsMap[ch]);
+    _encode(content) {
+        if (this._escapeTestRegExp.test(content)) {
+            return content.replace(this._escapeReplaceRegExp, (ch) => this._escapeReplacementsMap[ch]);
         }
-        return text;
+        return content;
     }
 
-    _escape(text) {
-        if (this._escapeTestNoEncodeRegExp.test(text)) {
-            return text.replace(this._escapeReplaceNoEncodeRegExp, (ch) => this._escapeReplacementsMap[ch]);
+    _escape(content) {
+        if (this._escapeTestNoEncodeRegExp.test(content)) {
+            return content.replace(this._escapeReplaceNoEncodeRegExp, (ch) => this._escapeReplacementsMap[ch]);
         }
-        return text;
+        return content;
     }
 };
 

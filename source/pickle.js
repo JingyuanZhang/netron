@@ -13,13 +13,13 @@ pickle.ModelFactory = class {
         const signature = [ 0x80, undefined, 0x8a, 0x0a, 0x6c, 0xfc, 0x9c, 0x46, 0xf9, 0x20, 0x6a, 0xa8, 0x50, 0x19 ];
         if (signature.length <= stream.length && stream.peek(signature.length).every((value, index) => signature[index] === undefined || signature[index] === value)) {
             // Reject PyTorch models with .pkl file extension.
-            return false;
+            return undefined;
         }
         const obj = context.open('pkl');
         if (obj !== undefined) {
-            return true;
+            return 'pickle';
         }
-        return false;
+        return undefined;
     }
 
     open(context) {
@@ -80,6 +80,11 @@ pickle.Graph = class {
                 this._nodes.push(new pickle.Node(item));
             }
         }
+        else if (obj && obj instanceof Map) {
+            for (const entry of obj) {
+                this._nodes.push(new pickle.Node(entry[1], entry[0]));
+            }
+        }
         else if (obj && obj.__class__) {
             this._nodes.push(new pickle.Node(obj));
         }
@@ -103,16 +108,18 @@ pickle.Graph = class {
 
 pickle.Node = class {
 
-    constructor(obj) {
+    constructor(obj, name) {
+        this._name = name || '';
         this._inputs = [];
         this._outputs = [];
         this._attributes = [];
         if (Array.isArray(obj)) {
-            this._type = 'List';
+            this._type = { name: 'List' };
             this._attributes.push(new pickle.Attribute('value', obj));
         }
         else {
-            this._type = obj.__class__ ? obj.__class__.__module__ + '.' + obj.__class__.__name__ : 'Object';
+            const type = obj.__class__ ? obj.__class__.__module__ + '.' + obj.__class__.__name__ : 'Object';
+            this._type = { name: type };
             for (const key of Object.keys(obj)) {
                 const value = obj[key];
                 this._attributes.push(new pickle.Attribute(key, value));
@@ -125,7 +132,7 @@ pickle.Node = class {
     }
 
     get name() {
-        return '';
+        return this._name;
     }
 
     get inputs() {

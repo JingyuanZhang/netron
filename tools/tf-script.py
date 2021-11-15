@@ -17,6 +17,7 @@ def metadata():
         'AvgPool': 'Pool',
         'BatchNormWithGlobalNormalization': 'Normalization',
         'BiasAdd': 'Layer',
+        'Concat': 'Tensor',
         'ConcatV2': 'Tensor',
         'Const': 'Constant',
         'Conv2D': 'Layer',
@@ -26,6 +27,7 @@ def metadata():
         'FusedBatchNorm': 'Normalization',
         'FusedBatchNormV2': 'Normalization',
         'FusedBatchNormV3': 'Normalization',
+        'Gather': 'Transform',
         'Identity': 'Control',
         'LeakyRelu': 'Activation',
         'LRN': 'Normalization',
@@ -41,7 +43,7 @@ def metadata():
         'Slice': 'Tensor',
         'Softmax': 'Activation',
         'Split': 'Tensor',
-        'Squeeze': 'Shape',
+        'Squeeze': 'Transform',
         'StridedSlice': 'Tensor',
         'swish_f32': 'Activation',
         'Variable': 'Control',
@@ -375,5 +377,5 @@ def metadata():
 
 if __name__ == '__main__':
     command_table = { 'metadata': metadata }
-    command = sys.argv[1] # if len(sys.argv) > 1 else 'metadata'
+    command = sys.argv[1] if len(sys.argv) > 1 else 'metadata'
     command_table[command]()

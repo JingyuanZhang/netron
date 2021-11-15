@@ -411,6 +411,10 @@
     "category": "Activation"
   },
   {
+    "name": "silu",
+    "category": "Activation"
+  },
+  {
     "name": "shortcut",
     "category": "Tensor",
     "attributes": [
@@ -444,7 +448,7 @@
   },
   {
     "name": "upsample",
-    "category": "Shape",
+    "category": "Data",
     "attributes": [
       { "name": "stride", "type": "int32", "default": 2 },
       { "name": "scale", "type": "float32", "default": 1 }

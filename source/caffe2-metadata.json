@@ -4557,6 +4557,7 @@
   },
   {
     "name": "Gather",
+    "category": "Transform",
     "description": "\n\nThe *Gather* op accepts a *DATA* tensor of rank $r >= 1$ and *INDICES* tensor of rank $q$ as inputs. It then gathers entries of the outer-most dimension of *DATA*, indexed by *INDICES*, and concatenate them in an output tensor of rank $q + (r - 1)$.\n\nGithub Links:\n\n- https://github.com/caffe2/caffe2/blob/master/caffe2/operators/gather_op.cc\n- https://github.com/caffe2/caffe2/blob/master/caffe2/operators/gather_op.h\n\n\n<details>\n\n<summary> <b>Example</b> </summary>\n\n**Code**\n\n```\n\nworkspace.ResetWorkspace()\n\nop = core.CreateOperator(\n    \"Gather\",\n    [\"DATA\", \"INDICES\"],\n    [\"OUTPUT\"]\n)\ndata = np.array([[1., 1.2],[2.3, 3.4],[4.5, 5.7]])\nprint(\"DATA:\\n\",data)\n\ninds = np.array([[0, 1],[1, 2]])\nprint(\"INDICES:\\n\",inds)\n\n// Feed X into workspace\nworkspace.FeedBlob(\"DATA\", data.astype(np.float32))\nworkspace.FeedBlob(\"INDICES\", inds.astype(np.int32))\n\nworkspace.RunOperatorOnce(op)\nprint(\"OUTPUT:\\n\", workspace.FetchBlob(\"OUTPUT\"))\n\n```\n\n**Result**\n\n```\n\nDATA:\n [[1.  1.2]\n [2.3 3.4]\n [4.5 5.7]]\nINDICES:\n [[0 1]\n [1 2]]\nOUTPUT:\n [[[1.  1.2]\n  [2.3 3.4]]\n\n [[2.3 3.4]\n  [4.5 5.7]]]\n\n```\n\n</details>\n\n",
     "inputs": [
       {
@@ -11813,6 +11814,16 @@
         "description": "Default 1e-5",
         "name": "epsilon",
         "option": "optional"
+      },
+      {
+        "name": "weight_decay",
+        "description": "Default 0",
+        "option": "optional"
+      },
+      {
+        "name": "counter_halflife",
+        "description": "Optional arg when weight_decay is adjusted by frequency (default -1)",
+        "option": "optional"
       }
     ],
     "inputs": [
@@ -11835,6 +11846,10 @@
       {
         "description": "learning rate",
         "name": "lr"
+      },
+      {
+        "name": "counter",
+        "description": "Optional input when weight_decay is adjusted by frequency ignored when counter_halflife == -1"
       }
     ],
     "outputs": [
@@ -11883,6 +11898,10 @@
       {
         "description": "Non negative vector with sum of elements equal to indices length",
         "name": "lengths"
+      },
+      {
+        "name": "counter",
+        "description": "Optional input when weight_decay is adjusted by frequency ignored when counter_halflife == -1"
       }
     ],
     "outputs": [
@@ -11936,6 +11955,10 @@
       {
         "description": "Non negative vector with sum of elements equal to indices length",
         "name": "lengths"
+      },
+      {
+        "name": "counter",
+        "description": "Optional input when weight_decay is adjusted by frequency ignored when counter_halflife == -1"
       }
     ],
     "outputs": [
@@ -11989,6 +12012,10 @@
       {
         "description": "Non negative vector with sum of elements equal to indices length",
         "name": "lengths"
+      },
+      {
+        "name": "counter",
+        "description": "Optional input when weight_decay is adjusted by frequency ignored when counter_halflife == -1"
       }
     ],
     "outputs": [
@@ -12042,6 +12069,10 @@
       {
         "description": "Non negative vector with sum of elements equal to indices length",
         "name": "lengths"
+      },
+      {
+        "name": "counter",
+        "description": "Optional input when weight_decay is adjusted by frequency ignored when counter_halflife == -1"
       }
     ],
     "outputs": [
@@ -12094,6 +12125,10 @@
       {
         "description": "Non negative vector with sum of elements equal to indices length",
         "name": "lengths"
+      },
+      {
+        "name": "counter",
+        "description": "Optional input when weight_decay is adjusted by frequency ignored when counter_halflife == -1"
       }
     ],
     "outputs": [
@@ -12150,6 +12185,10 @@
       {
         "description": "Non negative vector with sum of elements equal to indices length",
         "name": "lengths"
+      },
+      {
+        "name": "counter",
+        "description": "Optional input when weight_decay is adjusted by frequency ignored when counter_halflife == -1"
       }
     ],
     "outputs": [
@@ -16534,6 +16573,7 @@
   },
   {
     "name": "Transpose",
+    "category": "Transform",
     "description": "\nTranspose the input tensor by permuting the axes of the input according\nto the `axes` argument. Similar to numpy's\n[transpose](https://docs.scipy.org/doc/numpy/reference/generated/numpy.transpose.html)\nfunction.\n\nFor example, when axes=(1, 0, 2), given an input tensor of shape\n(1, 2, 3), the output shape will be (2, 1, 3).\n\nGithub Links:\n\n- https://github.com/pytorch/pytorch/blob/master/caffe2/operators/transpose_op.cc\n\n<details>\n\n<summary> <b>Example</b> </summary>\n\n**Code**\n\n```\nworkspace.ResetWorkspace()\n\nop = core.CreateOperator(\n    \"Transpose\",\n    [\"X\"],\n    [\"Y\"],\n    axes=(0,3,1,2)\n)\n\nx = np.random.rand(1,32,32,3)\nworkspace.FeedBlob(\"X\", x)\nprint(\"X.shape (NHWC order):\", workspace.FetchBlob(\"X\").shape)\nworkspace.RunOperatorOnce(op)\nprint(\"Y.shape (NCHW order):\", workspace.FetchBlob(\"Y\").shape)\n```\n\n**Result**\n\n```\nX.shape (NHWC order): (1, 32, 32, 3)\nY.shape (NCHW order): (1, 3, 32, 32)\n```\n\n</details>\n\n",
     "attributes": [
       {
@@ -17649,6 +17689,148 @@
   },
   {
     "name": "Log1pGradient",
+    "support_level": "default"
+  },
+  {
+    "name": "SparseItemwiseDropoutWithReplacement",
+    "description": "\n\n`SparseItemwiseDropoutWithReplacement` takes a 1-d input tensor and a lengths tensor.\nValues in the Lengths tensor represent how many input elements consitute each\nexample in a given batch.  The each input value in the tensor of an example can be\nreplaced with the replacement value with probability given by the `ratio`\nargument.\n\n<details>\n\n<summary> <b>Example</b> </summary>\n\n**Code**\n\n```\nworkspace.ResetWorkspace()\n\nop = core.CreateOperator(\n    \"SparseItemwiseDropoutWithReplacement\",\n    [\"X\", \"Lengths\"],\n    [\"Y\", \"OutputLengths\"],\n    ratio=0.5,\n    replacement_value=-1\n)\n\nworkspace.FeedBlob(\"X\", np.array([1, 2, 3, 4, 5]).astype(np.int64))\nworkspace.FeedBlob(\"Lengths\", np.array([2, 3]).astype(np.int32))\nprint(\"X:\", workspace.FetchBlob(\"X\"))\nprint(\"Lengths:\", workspace.FetchBlob(\"Lengths\"))\nworkspace.RunOperatorOnce(op)\nprint(\"Y:\", workspace.FetchBlob(\"Y\"))\nprint(\"OutputLengths:\", workspace.FetchBlob(\"OutputLengths\"))\n```\n\n**Result**\n\n```\nX: [1, 2, 3, 4, 5]\nLengths: [2, 3]\nY: [1, 2, -1]\nOutputLengths: [2, 1]\n```\n\n</details>\n\n",
+    "attributes": [
+      {
+        "name": "ratio",
+        "type": "float32",
+        "default": 0.0,
+        "description": "Probability of an element to be replaced.",
+        "option": "optional"
+      },
+      {
+        "name": "replacement_value",
+        "type": "int64",
+        "default": 0,
+        "description": "Value elements are replaced with.",
+        "option": "optional"
+      }
+    ],
+    "inputs": [
+      {
+        "name": "X",
+        "description": "*(type: Tensor`<int64_t>`)* Input data tensor."
+      },
+      {
+        "name": "Lengths",
+        "description": "*(type: Tensor`<int32_t>`)* Lengths tensor for input."
+      }
+    ],
+    "outputs": [
+      {
+        "name": "Y",
+        "description": "*(type: Tensor`<int64_t>`)* Output tensor."
+      },
+      {
+        "name": "OutputLengths",
+        "description": "*(type: Tensor`<int32_t>`)* Output tensor."
+      }
+    ],
+    "support_level": "default"
+  },
+  {
+    "name": "EstimateAllBlobSizes",
+    "description": "\nReturns two outputs: a 1D tensor of strings containing the names\nof each blob in the active workspace, and a 1D tensor of integers containing the\nestimated serialized size of each blob (in bytes).\n",
+    "attributes": [
+      {
+        "name": "include_shared",
+        "description": "(bool, default true) Whether to include blobs inherited from parent workspaces.",
+        "option": "optional"
+      },
+      {
+        "name": "options",
+        "description": "(string, default empty) A BlobSerializationOptions message specifying options for how specific blobs should be serialized.",
+        "option": "optional"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "blob_names",
+        "description": "1D tensor of strings containing blob names."
+      },
+      {
+        "name": "blob_sizes",
+        "description": "1D tensor of int64_t containing blob sizes."
+      }
+    ],
+    "support_level": "default"
+  },
+  {
+    "name": "SmartDecaySparseAdam",
+    "description": "\n\n    Computes the Adam Update for the sparse case.\n    Given inputs (param, moment1, moment2, indices, grad, lr, iter), runs the dense\n    Adam on (param, moment1[indices], momemnt2[indices], lr, iter) and returns\n    (new_param, new_moment1, new_moment2) as in dense case.\n    Adam can be customized as Rectified Adam (RAdam) by setting enableRAdam = true.\n\n    ",
+    "attributes": [
+      {
+        "name": "beta1",
+        "description": "Default 0.9",
+        "option": "optional"
+      },
+      {
+        "name": "beta2",
+        "description": "Default 0.999",
+        "option": "optional"
+      },
+      {
+        "name": "epsilon",
+        "description": "Default 1e-5",
+        "option": "optional"
+      }
+    ],
+    "inputs": [
+      {
+        "name": "param",
+        "description": "Parameters to be updated"
+      },
+      {
+        "name": "moment_1",
+        "description": "First moment history"
+      },
+      {
+        "name": "moment_2",
+        "description": "Second moment history"
+      },
+      {
+        "name": "last_seen",
+        "description": "Minibatch index when each weight was last seen"
+      },
+      {
+        "name": "indices",
+        "description": "Sparse indices"
+      },
+      {
+        "name": "grad",
+        "description": "Gradient computed"
+      },
+      {
+        "name": "lr",
+        "description": "learning rate"
+      },
+      {
+        "name": "iter",
+        "description": "iteration number"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "output_param",
+        "description": "Updated parameters"
+      },
+      {
+        "name": "output_moment_1",
+        "description": "Updated first moment"
+      },
+      {
+        "name": "output_moment_2",
+        "description": "Updated second moment"
+      },
+      {
+        "name": "output_last_seen",
+        "description": "Updated minibatch index when each weight was last seen"
+      }
+    ],
     "support_level": "default"
   }
 ]

@@ -19,7 +19,8 @@
       { "name": "alpha", "type": "float32", "default": 0.2 },
       { "name": "min_val", "type": "float32", "default": -1 },
       { "name": "max_val", "type": "float32", "default": 1 },
-      { "name": "activation_type", "type": "ActivationType", "default": "NO_ACTIVATION" }
+      { "name": "activation_type", "type": "ActivationType", "default": "NO_ACTIVATION" },
+      { "name": "approximate", "type": "boolean", "default": false }
     ],
     "inputs": [
       { "name": "input" }
@@ -131,10 +132,26 @@
     ]
   },
   {
+    "name": "Affine",
+    "attributes": [
+      { "name": "context", "type": "int64[]", "default": 0 },
+      { "name": "output_dim", "type": "int64", "default": 0 },
+      { "name": "activation_type", "type": "ActivationType", "default": "NO_ACTIVATION" },
+      { "name": "transpose_a", "type": "boolean", "default": false },
+      { "name": "transpose_b", "type": "boolean", "default": false }
+    ]
+  },
+  {
     "name": "All",
     "attributes": [
       { "name": "keepDims", "type": "int32", "default": 0 },
       { "name": "keep_dims", "type": "int64", "default": 0 }
+    ]
+  },
+  {
+    "name": "AllGather",
+    "attributes": [
+      { "name": "group", "type": "string", "default": null }
     ]
   },
   {
@@ -243,6 +260,9 @@
     "outputs": [
       { "name": "y" }
     ]
+  },
+  {
+    "name": "Attention"
   },
   {
     "name": "AudioSpectrogram",
@@ -430,6 +450,12 @@
     ],
     "outputs": [
       { "name": "output" }
+    ]
+  },
+  {
+    "name": "Call",
+    "attributes": [
+      { "name": "is_tail_call", "type": "boolean", "default": true }
     ]
   },
   {
@@ -695,9 +721,18 @@
     ]
   },
   {
+    "name": "CumSum",
+    "attributes": [
+      { "name": "exclusive", "type": "boolean", "default": false },
+      { "name": "reverse", "type": "boolean", "default": false }
+    ]
+  },
+  {
     "name": "Custom",
     "attributes": [
-      { "name": "custom", "type": "ubyte[]" }
+      { "name": "custom", "type": "ubyte[]" },
+      { "name": "type", "type": "string", "default": null },
+      { "name": "attr", "type": "Attribute[]" }
     ]
   },
   {
@@ -1205,6 +1240,7 @@
   },
   {
     "name": "Gather",
+    "category": "Transform",
     "attributes": [
       { "name": "axis", "type": "int32", "default": 0 },
       { "name": "batchDims", "type": "int32", "default": 0 }
@@ -1228,6 +1264,49 @@
     ],
     "outputs": [
       { "name": "output" }
+    ]
+  },
+  {
+    "name": "GenOP",
+    "attributes": [
+      { "name": "activation_type", "type": "ActivationType", "default": "NO_ACTIVATION" },
+      { "name": "alpha", "type": "float32", "default": 0 },
+      { "name": "min_val", "type": "float32", "default": 0 },
+      { "name": "max_val", "type": "float32", "default": 0 },
+      { "name": "is_training", "type": "boolean", "default": false },
+      { "name": "format", "type": "Format", "default": "NCHW" },
+      { "name": "kernel_size", "type": "int64[]", "default": 0 },
+      { "name": "stride", "type": "int64[]", "default": 0 },
+      { "name": "dilation", "type": "int64[]", "default": 0 },
+      { "name": "pad_mode", "type": "PadMode", "default": "PAD" },
+      { "name": "pad_list", "type": "int64[]", "default": 0 },
+      { "name": "mode", "type": "int64", "default": 0 },
+      { "name": "group", "type": "int64", "default": 0 },
+      { "name": "in_channel", "type": "int64", "default": 0 },
+      { "name": "out_channel", "type": "int64", "default": 0 },
+      { "name": "eltwise_mode", "type": "EltwiseMode", "default": "PROD" },
+      { "name": "has_bias", "type": "boolean", "default": false },
+      { "name": "use_axis", "type": "boolean", "default": false },
+      { "name": "axis", "type": "int64", "default": 0 },
+      { "name": "epsilon", "type": "float32", "default": 0.0001 },
+      { "name": "momentum", "type": "float32", "default": 0.9 },
+      { "name": "transpose_a", "type": "boolean", "default": false },
+      { "name": "transpose_b", "type": "boolean", "default": false },
+      { "name": "pad", "type": "int64[]", "default": 0 },
+      { "name": "round_mode", "type": "RoundMode", "default": "FLOOR" },
+      { "name": "global", "type": "boolean", "default": false },
+      { "name": "channel_shared", "type": "boolean", "default": false },
+      { "name": "axes", "type": "int64[]", "default": 0 },
+      { "name": "keep_dims", "type": "boolean", "default": false },
+      { "name": "reduce_mode", "type": "ReduceMode", "default": "ReduceMean" },
+      { "name": "reduce_to_end", "type": "boolean", "default": false },
+      { "name": "coeff", "type": "float32", "default": 0 }
+    ]
+  },
+  {
+    "name": "GLU",
+    "attributes": [
+      { "name": "axis", "type": "int64", "default": -1 }
     ]
   },
   {
@@ -1298,7 +1377,8 @@
     ]
   },
   {
-    "name": "Identity"
+    "name": "Identity",
+    "category": "Control"
   },
   {
     "name": "If"
@@ -1497,6 +1577,12 @@
     ]
   },
   {
+    "name": "LogSoftmax",
+    "attributes": [
+      { "name": "axis", "type": "int64", "default": 0 }
+    ]
+  },
+  {
     "name": "Loop",
     "attributes": [
       { "name": "subGraphIndex", "type": "int32", "default": 0 }
@@ -1578,6 +1664,20 @@
   },
   {
     "name": "LSTM",
+    "attributes": [
+      { "name": "bidirectional", "type": "boolean", "default": false },
+      { "name": "has_bias", "type": "boolean", "default": false },
+      { "name": "input_size", "type": "int64", "default": 0 },
+      { "name": "hidden_size", "type": "int64", "default": 0 },
+      { "name": "num_layers", "type": "int64", "default": 0 },
+      { "name": "num_directions", "type": "int64", "default": 0 },
+      { "name": "dropout", "type": "float32", "default": 0 },
+      { "name": "zoneout_cell", "type": "float32", "default": 0 },
+      { "name": "zoneout_hidden", "type": "float32", "default": 0 }
+    ]
+  },
+  {
+    "name": "LSTMGrad",
     "attributes": [
       { "name": "bidirectional", "type": "boolean", "default": false },
       { "name": "has_bias", "type": "boolean", "default": false },
@@ -2064,6 +2164,9 @@
     ]
   },
   {
+    "name": "RaggedRange"
+  },
+  {
     "name": "RandomStandardNormal",
     "attributes": [
       { "name": "seed", "type": "int64", "default": 0 },
@@ -2128,6 +2231,13 @@
       { "name": "mode", "type": "ReduceMode", "default": "ReduceMean" },
       { "name": "reduce_to_end", "type": "boolean", "default": false },
       { "name": "coeff", "type": "float32", "default": 0 }
+    ]
+  },
+  {
+    "name": "ReduceScatter",
+    "attributes": [
+      { "name": "group", "type": "string", "default": null },
+      { "name": "mode", "type": "ReduceMode", "default": "ReduceMean" }
     ]
   },
   {
@@ -2312,6 +2422,9 @@
     "outputs": [
       { "name": "output" }
     ]
+  },
+  {
+    "name": "ScatterNdUpdate"
   },
   {
     "name": "Select",
@@ -2541,6 +2654,20 @@
     ]
   },
   {
+    "name": "SplitWithOverlap",
+    "attributes": [
+      { "name": "number_split", "type": "int64", "default": 0 },
+      { "name": "ratio", "type": "int64[]", "default": 0 },
+      { "name": "extend_top", "type": "int64[]", "default": 0 },
+      { "name": "extend_bottom", "type": "int64[]", "default": 0 },
+      { "name": "split_dim", "type": "int64", "default": 0 },
+      { "name": "stride", "type": "int64", "default": 0 },
+      { "name": "pad_top", "type": "int64", "default": 0 },
+      { "name": "trans_format", "type": "boolean", "default": false },
+      { "name": "split_stride", "type": "int64", "default": 0 }
+    ]
+  },
+  {
     "name": "Sqrt",
     "inputs": [
       { "name": "input" }
@@ -2668,6 +2795,9 @@
     "name": "Switch"
   },
   {
+    "name": "SwitchLayer"
+  },
+  {
     "name": "Tan",
     "inputs": [
       { "name": "x" }
@@ -2675,6 +2805,21 @@
     "outputs": [
       { "name": "y" }
     ]
+  },
+  {
+    "name": "TensorArray",
+    "attributes": [
+      { "name": "dynamic_size", "type": "boolean", "default": false },
+      { "name": "identical_element_shapes", "type": "boolean", "default": false },
+      { "name": "element_shape", "type": "int32[]", "default": 0 },
+      { "name": "data_type", "type": "int32", "default": 0 }
+    ]
+  },
+  {
+    "name": "TensorArrayRead"
+  },
+  {
+    "name": "TensorArrayWrite"
   },
   {
     "name": "TensorListFromTensor",

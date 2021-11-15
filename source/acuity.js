@@ -1,5 +1,4 @@
 /* jshint esversion: 6 */
-/* eslint "indent": [ "error", 4, { "SwitchCase": 1 } ] */
 
 var acuity = acuity || {};
 var json = json || require('./json');
@@ -11,23 +10,16 @@ acuity.ModelFactory = class {
         if (extension === 'json') {
             const obj = context.open('json');
             if (obj && obj.MetaData && obj.Layers) {
-                return true;
+                return 'acuity.json';
             }
         }
-        return false;
+        return undefined;
     }
 
     open(context) {
         return acuity.Metadata.open(context).then((metadata) => {
-            const extension = context.identifier.split('.').pop().toLowerCase();
-            switch (extension) {
-                case 'json': {
-                    const obj = context.open('json');
-                    if (obj && obj.MetaData && obj.Layers) {
-                        return new acuity.Model(metadata, obj);
-                    }
-                }
-            }
+            const obj = context.open('json');
+            return new acuity.Model(metadata, obj);
         });
     }
 };
@@ -89,13 +81,16 @@ acuity.Graph = class {
                         const sizes = layer.parameters.size.split(' ');
                         shape = [0, parseInt(sizes[0]), parseInt(sizes[1]), layer.parameters.channels];
                     }
+                    if (shape && shape.length === 4 && shape[0] === 0) {
+                        shape[0] = 1;
+                    }
                 }
                 argument.shape = shape;
                 return argument;
             });
         }
 
-        new acuity.Inference(model.Layers);
+        acuity.Inference.infer(model.Layers);
 
         for (const pair of args) {
             const type = new acuity.TensorType(null, new acuity.TensorShape(pair[1].shape));
@@ -142,33 +137,29 @@ acuity.Graph = class {
 acuity.Node = class {
 
     constructor(metadata, name, layer, args) {
-        this._metadata = metadata;
         this._name = name;
-        this._type = layer.op;
+        this._type = metadata.type(layer.op) || { name: layer.op };
         this._inputs = [];
         this._outputs = [];
         this._attributes = [];
         this._layer = layer;
-
-        const schema = this._metadata.type(layer.op);
-        if (schema) {
+        if (this._type) {
             if (layer.parameters) {
                 for (const key of Object.keys(layer.parameters)) {
-                    const metadata = this._metadata.attribute(this._type, key);
-                    this._attributes.push(new acuity.Attribute(metadata, key, layer.parameters[key]));
+                    const attributeMetadata = metadata.attribute(this._type, key);
+                    this._attributes.push(new acuity.Attribute(attributeMetadata, key, layer.parameters[key]));
                 }
             }
         }
-
         for (let i = 0; i < layer.inputs.length; i++) {
             const input = layer.inputs[i];
             const arg = args.get(input.name);
-            const name = schema && schema.inputs && i < schema.inputs.length ? schema.inputs[i].name : 'input' + i.toString();
+            const name = this._type && this._type.inputs && i < this._type.inputs.length ? this._type.inputs[i].name : 'input' + i.toString();
             this._inputs.push(new acuity.Parameter(name, true, [ arg ]));
         }
 
-        if (schema && schema.constants) {
-            for (const constant of schema.constants) {
+        if (this._type && this._type.constants) {
+            for (const constant of this._type.constants) {
                 // const name = "@" + this._name + ":" + constant.name;
                 const type = new acuity.TensorType(null, new acuity.TensorShape(null));
                 const argument = new acuity.Argument('', type, null, new acuity.Tensor(type));
@@ -179,7 +170,7 @@ acuity.Node = class {
         for (let i = 0; i < layer.outputs.length; i++) {
             const output = layer.outputs[i];
             const arg = args.get(output.name);
-            const name = schema && schema.outputs && i < schema.outputs.length ? schema.outputs[i].name : 'output' + i.toString();
+            const name = this._type && this._type.outputs && i < this._type.outputs.length ? this._type.outputs[i].name : 'output' + i.toString();
             this._outputs.push(new acuity.Parameter(name, true, [arg]));
         }
     }
@@ -190,10 +181,6 @@ acuity.Node = class {
 
     get name() {
         return this._name;
-    }
-
-    get metadata() {
-        return this._metadata.type(this.type);
     }
 
     get inputs() {
@@ -338,15 +325,14 @@ acuity.TensorShape = class {
     }
 
     get dimensions() {
+        if (Array.isArray(this._dimensions) && this._dimensions.length == 1 && this._dimensions[0] == 0) {
+            return [];
+        }
         return this._dimensions;
     }
 
-    set dimensions(dimensions) {
-        this._dimensions = dimensions;
-    }
-
     toString() {
-        if (!this._dimensions || this._dimensions.length == 0) {
+        if (!Array.isArray(this._dimensions) || this._dimensions.length == 0 || (this._dimensions.length == 1 && this._dimensions[0] == 0)) {
             return '';
         }
         return '[' + this._dimensions.map((dimension) => dimension.toString()).join(',') + ']';
@@ -368,7 +354,7 @@ acuity.Tensor = class {
     }
 
     get state() {
-        return 'Not supported.';
+        return 'Tensor data not implemented.';
     }
 
     toString() {
@@ -425,10 +411,10 @@ acuity.Metadata = class {
     }
 };
 
-acuity.Inference =  class {
+acuity.Inference = class {
 
-    constructor(layers) {
-        this._outputs = new Map();
+    static infer(layers) {
+        const outputs = new Map();
         const outputLayers = [];
         for (const layerName of Object.keys(layers)) {
             const layer = layers[layerName];
@@ -436,91 +422,338 @@ acuity.Inference =  class {
                 outputLayers.push(layer);
             }
             for (const output of layer.outputs) {
-                this._outputs.set(output.name, layer);
+                outputs.set(output.name, layer);
             }
         }
-        this._passthroughs = new Set([
-            'a_times_b_plus_c', 'abs', 'cast', 'clipbyvalue', 'dequantize', 'dtype_converter',
-            'elu', 'exp', 'floor', 'floor_div', 'hard_swish', 'leakyrelu', 'log', 'log_softmax',
-            'neg', 'pow', 'prelu', 'quantize', 'relu', 'relu_keras', 'relun', 'rsqrt', 'sigmoid',
-            'sin', 'softmax', 'softrelu', 'sqrt', 'square', 'tanh'
+        const broadcasts = new Set([
+            'add', 'equal', 'fllor_mod', 'floor_div', 'greater', 'greater_equal', 'less', 'less_equal',
+            'logical_and', 'logical_or', 'minimum', 'multiply', 'not_equal', 'pow', 'real_div',
+            'squared_difference', 'subtract'
         ]);
-        this._operators = new Map();
-        this._operators.set('concat', (inputs, parameters) => {
+        const passthroughs = new Set([
+            'LocalResponseNormalization', 'a_times_b_plus_c', 'abs', 'batchnorm_single', 'batchnormalize',
+            'cast', 'cast', 'clipbyvalue', 'dequantize', 'dtype_converter', 'elu', 'exp', 'floor',
+            'groupnormalize', 'hard_sigmoid', 'hard_swish', 'instancenormalize', 'l2normalize', 'l2normalizescale',
+            'layernormalize', 'leakyrelu', 'log', 'log_softmax', 'mish', 'neg', 'norm_with_channel_mean',
+            'norm_with_min_max', 'norm_with_scale', 'pow', 'prelu', 'quantize', 'relu', 'relu_keras',
+            'relun', 'reverse', 'round', 'rsqrt', 'sigmoid', 'sin', 'softmax', 'softrelu', 'sqrt', 'square', 'tanh'
+        ]);
+        const reduces = new Set([
+            'reduceany', 'reducemax', 'reducemean', 'reducemin', 'reduceprod', 'reducesum'
+        ]);
+        const operators = new Map();
+        operators.set('broadcast', (inputs) => {
+            const a = inputs[0];
+            const b = inputs[1];
+            const longer = a.length >= b.length ? a.slice() : b.slice();
+            const shorter = a.length < b.length ? a.slice() : b.slice();
+            const remain = longer.length - shorter.length;
+            for (let i = 0; i < remain; i++) {
+                shorter.splice(0, 0, 1);
+            }
+            for (let i = 0; i < longer.length; i++) {
+                longer[i] = longer[i] > shorter[i] ? longer[i] : shorter[i];
+            }
+            return [ longer ];
+        });
+        operators.set('concat', (inputs, params) => {
             const outputShape = inputs[0].slice();
-            outputShape[parameters.dim] = 0;
+            outputShape[params.dim] = 0;
             for (const shape of inputs) {
-                outputShape[parameters.dim] += shape[parameters.dim];
+                outputShape[params.dim] += shape[params.dim];
             }
-            return [outputShape];
+            return [ outputShape ];
         });
-        this._operators.set('convolution', (inputs, parameters) => {
-            if (parameters.padding == 'VALID') {
-                const out_h = ~~((inputs[0][1] + parameters.stride_h - parameters.ksize_h) / parameters.stride_h);
-                const out_w = ~~((inputs[0][2] + parameters.stride_w - parameters.ksize_w) / parameters.stride_w);
-                return [[inputs[0][0], out_h, out_w, parameters.weights]];
+        operators.set('conv1d', (inputs, params) => {
+            if (params.padding == 'VALID') {
+                const out_h = ~~((inputs[0][1] + params.stride - params.ksize) / params.stride);
+                return [ [ inputs[0][0], out_h, params.weights ] ];
             }
-            else if (parameters.padding == 'SAME') {
-                const out_h = ~~((inputs[0][1] + parameters.stride_h - 1) / parameters.stride_h);
-                const out_w = ~~((inputs[0][2] + parameters.stride_w - 1) / parameters.stride_w);
-                return [[inputs[0][0], out_h, out_w, parameters.weights]];
+            else if (params.padding == 'SAME') {
+                const out_h = ~~((inputs[0][1] + params.stride - 1) / params.stride);
+                return [ [ inputs[0][0], out_h, params.weights ] ];
             }
         });
-        this._operators.set('fullconnect', (inputs, parameters) => {
-            return [inputs[0].slice(0, parameters.axis).concat([parameters.weights])];
-        });
-        this._operators.set('pooling', (inputs, parameters) => {
-            if (parameters.padding == 'VALID') {
-                const out_h = ~~((inputs[0][1] + parameters.stride_h - parameters.ksize_h) / parameters.stride_h);
-                const out_w = ~~((inputs[0][2] + parameters.stride_w - parameters.ksize_w) / parameters.stride_w);
-                return [[inputs[0][0], out_h, out_w, inputs[0][3]]];
+        operators.set('convolution', (inputs, params) => {
+            if (params.padding == 'VALID') {
+                const out_h = ~~((inputs[0][1] + params.stride_h + params.pad[0] + params.pad[1] - params.ksize_h) / params.stride_h);
+                const out_w = ~~((inputs[0][2] + params.stride_w + params.pad[2] + params.pad[3]- params.ksize_w) / params.stride_w);
+                return [ [ inputs[0][0], out_h, out_w, params.weights ] ];
             }
-            else if (parameters.padding == 'SAME') {
-                const out_h = ~~((inputs[0][1] + parameters.stride_h - 1) / parameters.stride_h);
-                const out_w = ~~((inputs[0][2] + parameters.stride_w - 1) / parameters.stride_w);
-                return [[inputs[0][0], out_h, out_w, inputs[0][3]]];
+            else if (params.padding == 'SAME') {
+                const out_h = ~~((inputs[0][1] + params.stride_h - 1) / params.stride_h);
+                const out_w = ~~((inputs[0][2] + params.stride_w - 1) / params.stride_w);
+                return [ [ inputs[0][0], out_h, out_w, params.weights ] ];
             }
         });
+        operators.set('deconvolution', (inputs, params) => {
+            return [ params.output_shape.map((item, index) => item == 0 ? inputs[0][index] : item) ];
+        });
+        operators.set('fullconnect', (inputs, params) => {
+            return [ inputs[0].slice(0, params.axis).concat([params.weights]) ];
+        });
+        operators.set('gather', (inputs, params) => {
+            const prefix = inputs[1].slice();
+            const suffix = inputs[0].slice(params.axis + 1);
+            return [ prefix.concat(suffix) ];
+        });
+        operators.set('lstm', (inputs, params) => {
+            let batch = inputs[0][0];
+            const output = params.num_proj != null ? params.num_proj : params.weights;
+            if (params.time_major) {
+                batch = inputs[0][1];
+            }
+            const newShape = params.return_sequences ? [ inputs[0][0], inputs[0][1], output ] : [ batch, output ];
+            return [ newShape, [batch, output], [batch, params.weights] ];
+        });
+        operators.set('matmul', (inputs, params) => {
+            const a = inputs[0];
+            const b = inputs[1];
+            let newShape = a.slice(0, -2);
+            if (params.transpose_a) {
+                newShape = newShape.concat(a.slice(-1));
+            }
+            else {
+                newShape = newShape.concat(a.slice(-2, -1));
+            }
+            if (params.transpose_b) {
+                newShape = newShape.concat(b.slice(-2, -1));
+            }
+            else {
+                newShape = newShape.concat(b.slice(-1));
+            }
+            return [ newShape ];
+        });
+        operators.set('pad', (inputs, params) => {
+            return [ inputs[0].map((item, index) => item + params.padding_value[index][0] + params.padding_value[index][1]) ];
+        });
+        operators.set('permute', (inputs, params) => {
+            return [ inputs[0].map((item, index) => inputs[0][params.perm[index]]) ];
+        });
+        operators.set('pooling', (inputs, params) => {
+            if (params.padding == 'VALID') {
+                const out_h = ~~((inputs[0][1] + params.stride_h - params.ksize_h) / params.stride_h);
+                const out_w = ~~((inputs[0][2] + params.stride_w - params.ksize_w) / params.stride_w);
+                return [ [inputs[0][0], out_h, out_w, inputs[0][3]] ];
+            }
+            else if (params.padding == 'SAME') {
+                const out_h = ~~((inputs[0][1] + params.stride_h - 1) / params.stride_h);
+                const out_w = ~~((inputs[0][2] + params.stride_w - 1) / params.stride_w);
+                return [ [inputs[0][0], out_h, out_w, inputs[0][3]] ];
+            }
+        });
+        operators.set('reduce', (inputs, params) => {
+            const newShape = inputs[0].slice();
+            if (params.keep_dims) {
+                for (const i in params.axis_list) {
+                    newShape[i] = 1;
+                }
+            }
+            else {
+                const axis_list = params.axis_list.map((item) => {
+                    return item < 0 ? newShape.length + item : item;
+                });
+                axis_list.sort((a, b) => {
+                    return b - a;
+                });
+                axis_list.map((item) => {
+                    newShape.splice(item, 1);
+                });
+                if (!newShape.length) {
+                    newShape.splice(0, 0, 0);
+                }
+            }
+            return [ newShape ];
+        });
+        operators.set('repeat', (inputs, params) => {
+            const newShape = inputs[0].slice();
+            newShape[params.axis] = params.maxlen;
+            return [ newShape ];
+        });
+        operators.set('reshape', (inputs, params) => {
+            const negativeIndexs = [];
+            let shape = params.shape;
+            if (typeof params.shape === 'string') {
+                shape = params.shape.split(/\s+/).map((item) => {
+                    return parseInt(item);
+                });
+            }
+            const newShape = shape.map((item, index) => {
+                if (item == 0) {
+                    return inputs[0][index];
+                }
+                if (item == -1) {
+                    negativeIndexs.push(index);
+                    return 1;
+                }
+                return item;
+            });
+            if (negativeIndexs.length > 0) {
+                newShape[negativeIndexs[0]] = inputs[0].reduce((a, c) => a * c) / newShape.reduce((a, c) => a * c);
+            }
+            return [ newShape ];
+        });
+        operators.set('sequence_mask', (inputs, params) => {
+            return [ inputs[0].slice().concat([params.maxlen]) ];
+        });
+        operators.set('slice', (inputs, params) => {
+            return [ params.size.map((item, index) => item == -1 ? inputs[0][index] : item) ];
+        });
+        operators.set('squeeze', (inputs, params) => {
+            const newShape = inputs[0].slice();
+            const axis_list = [...new Set(params.axis_list)].sort((a, b) => b - a);
+            axis_list.map((item) => {
+                newShape.splice(item, 1);
+            });
+            return [ newShape ];
+        });
+        operators.set('space2depth', (inputs, params) => {
+            const h = inputs[0][1] / params.block_size[0];
+            const w = inputs[0][2] / params.block_size[1];
+            const c = inputs[0][3] * params.block_size[1] * params.block_size[1];
+            return [ [inputs[0][0], h, w, c] ];
+        });
+        operators.set('split', (inputs, params) => {
+            const sizes = [];
+            const slices = params.slices.slice();
+            slices.splice(0, 0, 0);
+            slices.push(inputs[0][params.dim]);
+            slices.reduce((a, b) => {
+                sizes.push(b - a);
+                return b;
+            });
+            return sizes.map((item) => {
+                const shape = inputs[0].slice();
+                shape[params.dim] = item;
+                return shape;
+            });
+        });
+        operators.set('stack', (inputs, params) => {
+            const newShape = inputs[0].slice();
+            if (newShape.length == 1 && newShape[0] == 0) {
+                newShape[0] = 1;
+            }
+            else {
+                newShape.splice(params.axis, 0, inputs.length);
+            }
+            return [ newShape ];
+        });
+        operators.set('stridedslice', (inputs, params) => {
+            const input_shape = inputs[0].slice();
+            const begin = params.slice_begin.slice();
+            const end = params.slice_end.slice();
+            if (params.slice_begin_mask > 0) {
+                for (let i = 0; i < begin.length; i++) {
+                    if ((params.slice_begin_mask >>> i) & 0x1) {
+                        begin[i] = -1;
+                    }
+                }
+            }
+            if (params.slice_end_mask > 0) {
+                for (let i = 0; i < end.length; i++) {
+                    if ((params.slice_end_mask >>> i) & 0x1) {
+                        end[i] = -1;
+                    }
+                }
+            }
+            for (let i = 0; i < begin.length; i++) {
+                if (begin[i] == -1) {
+                    begin[i] = 0;
+                }
+            }
+            if (inputs[0].length == end.length){
+                for (let i = 0; i < end.length; i++) {
+                    if (end[i] == -1 || end[i] > input_shape[i]) {
+                        end[i] = input_shape[i];
+                    }
+                }
+            }
+            else if (inputs[0].length < end.length){
+                if (params.slice_new_axis_mask) {
+                    const len = (params.slice_new_axis_mask >>> 0).toString(2).length;
+                    for (let i = 0; i < len; i++) {
+                        if ((params.slice_new_axis_mask >>> i) & 0x1) {
+                            input_shape.splice(i, 0, 1);
+                        }
+                    }
+                    for (let i = 0; i < end.length; i++) {
+                        if (end[i] == -1) {
+                            end[i] = input_shape[i];
+                        }
+                    }
+                }
+            }
+            let newShape = [];
+            for (let i = 0; i < begin.length; i++) {
+                newShape = newShape.concat([(end[i] - begin[i])/params.slice_strides[i]]);
+            }
+            if (params.slice_shrink_axis_mask) {
+                const len = (params.slice_shrink_axis_mask >>> 0).toString(2).length;
+                for (let i = 0; i < len; i++) {
+                    if ((params.slice_shrink_axis_mask >>> i) & 0x1) {
+                        newShape.splice(i, 1);
+                    }
+                }
+            }
+            if (params.slice_new_axis_mask) {
+                const len = (params.slice_new_axis_mask >>> 0).toString(2).length;
+                for (let i = 0; i < len; i++) {
+                    if ((params.slice_new_axis_mask >>> i) & 0x1) {
+                        if (inputs[0].length == begin.length) {
+                            newShape.splice(i, 0, 1);
+                        }
+                        else if (inputs[0].length < begin.length) {
+                            newShape[i] = 1;
+                        }
+                    }
+                }
+            }
+            return [ newShape ];
+        });
+        const infer = (output) => {
+            if (outputs.has(output.name)) {
+                let ready = true;
+                const layer = outputs.get(output.name);
+                for (const input of layer.inputs) {
+                    if (input.shape === null) {
+                        infer(input);
+                        if (input.shape === null) {
+                            ready = false;
+                            break;
+                        }
+                    }
+                }
+                if (ready) {
+                    let callback = null;
+                    if (operators.has(layer.op)) {
+                        callback = operators.get(layer.op);
+                    }
+                    else if (passthroughs.has(layer.op)) {
+                        callback = (inputs) => [ inputs[0].slice() ];
+                    }
+                    else if (broadcasts.has(layer.op)) {
+                        callback = operators.get('broadcast');
+                    }
+                    else if (reduces.has(layer.op)) {
+                        callback = operators.get('reduce');
+                    }
+                    else {
+                        callback = () => [];
+                    }
+                    const parameters = layer.parameters;
+                    const inputs = layer.inputs.map((input) => input.shape);
+                    const outputs = callback(inputs, parameters);
+                    for (let i = 0; i < outputs.length; i++) {
+                        if (i < layer.outputs.length) {
+                            layer.outputs[i].shape = outputs[i];
+                        }
+                    }
+                }
+            }
+        };
         for (const layer of outputLayers) {
             for (const output of layer.outputs) {
-                this._infer(output);
-            }
-        }
-    }
-
-    _infer(output) {
-        if (this._outputs.has(output.name)) {
-            let inputShapeReady = true;
-            const layer = this._outputs.get(output.name);
-            for (const input of layer.inputs) {
-                if (input.shape === null) {
-                    this._infer(input);
-                    if (input.shape === null) {
-                        inputShapeReady = false;
-                        break;
-                    }
-                }
-            }
-
-            if (inputShapeReady) {
-                let callback = null;
-                if (this._operators.has(layer.op)) {
-                    callback = this._operators.get(layer.op);
-                }
-                else if (this._passthroughs.has(layer.op)) {
-                    callback = (inputs) => [ inputs[0].slice() ];
-                }
-                else {
-                    callback = () => [];
-                }
-                const parameters = layer.parameters;
-                const inputs = layer.inputs.map((input) => input.shape);
-                const outputs = callback(inputs, parameters);
-                for (let i = 0; i < outputs.length; i++) {
-                    if (i < layer.outputs.length) {
-                        layer.outputs[i].shape = outputs[i];
-                    }
-                }
+                infer(output);
             }
         }
     }
