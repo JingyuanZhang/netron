@@ -29,13 +29,15 @@ xml.TextReader = class {
 
     read() {
         const decoder = text.Decoder.open(this._data);
+        this._decoder = decoder.encoding === 'utf-8' ? text.Decoder.open(this._data, 'utf-8') : decoder;
         const document = new xml.Document();
         this._stack = [];
         this._push(document);
-        this._decoder = decoder;
         this._position = 0;
-        this._char = decoder.decode();
+        this._version = 0;
+        this._char = this._decoder.decode();
         for (;;) {
+            const start = this._position;
             switch (this._char) {
                 case '<': {
                     this._next();
@@ -44,10 +46,33 @@ xml.TextReader = class {
                             this._next();
                             const name = this._name();
                             this._assert(name !== null);
-                            if (this._char !== '?') {
-                                this._whitespace(1);
-                            }
+                            let whitespace = this._char === '?' ? false : this._whitespace(1);
+                            const position = this._position;
                             const data = this._terminal('?>');
+                            if (name.toLowerCase() === 'xml') {
+                                this._seek(position);
+                                this._assert(name === 'xml', "'" + name + "' must be lower case");
+                                this._assert(start === 0, "Prolog must start with XML declaration", start);
+                                const obj = { version: '1.0', encoding: '', standalone: 'no' };
+                                for (const name of Object.keys(obj)) {
+                                    if (whitespace && (name == 'version' ? this._expect(name) : this._match(name))) {
+                                        this._whitespace(0);
+                                        this._expect('=');
+                                        this._whitespace(0);
+                                        obj[name] = this._attValue().toLowerCase();
+                                        whitespace = this._whitespace(0);
+                                    }
+                                }
+                                this._expect('?>');
+                                if (this._decoder.encoding && obj.encoding !== this._decoder.encoding) {
+                                    const position = this._position;
+                                    this._decoder = text.Decoder.open(this._data, obj.encoding);
+                                    this._seek(position);
+                                }
+                                if (obj.version === '1.1') {
+                                    this._version = 1;
+                                }
+                            }
                             const node = document.createProcessingInstruction(name, data);
                             this._appendChild(node);
                             break;
@@ -98,7 +123,8 @@ xml.TextReader = class {
                                 }
                             }
                             else if (this._match('ENTITY')) {
-                                this._assert(this._nodeType() === xml.NodeType.DocumentType);
+                                const documentType = this._top();
+                                this._assert(documentType.nodeType === xml.NodeType.DocumentType);
                                 this._whitespace(1);
                                 const parsed = this._char === '%';
                                 if (parsed) {
@@ -107,30 +133,36 @@ xml.TextReader = class {
                                 }
                                 const name = this._name();
                                 this._assert(name !== null);
-                                const node = document.createEntity(name);
+                                const node = documentType.createEntity(name);
                                 let whitespace = this._whitespace(0);
                                 if (whitespace && (this._char === '"' || this._char === "'")) {
-                                    this._quote();
+                                    this._entityValue();
                                     whitespace = this._whitespace(0);
                                 }
-                                if (whitespace && this._match('SYSTEM')) {
-                                    this._whitespace(1);
-                                    node.systemId = this._quote();
-                                    whitespace = this._whitespace(0);
-                                }
-                                if (whitespace && this._match('PUBLIC')) {
-                                    this._whitespace(1);
-                                    node.publicId = this._pubidLiteral();
-                                    this._whitespace(1);
-                                    node.systemId = this._quote();
-                                    whitespace = this._whitespace(0);
-                                }
-                                if (whitespace && !parsed) {
-                                    if (this._match('NDATA')) {
+                                else {
+                                    if (whitespace && this._match('SYSTEM')) {
                                         this._whitespace(1);
-                                        const name = this._name();
-                                        this._assert(name !== null);
-                                        node.notationName = name;
+                                        node.systemId = this._quote();
+                                        whitespace = this._whitespace(0);
+                                    }
+                                    else if (whitespace && this._match('PUBLIC')) {
+                                        this._whitespace(1);
+                                        node.publicId = this._pubidLiteral();
+                                        this._whitespace(1);
+                                        node.systemId = this._quote();
+                                        whitespace = this._whitespace(0);
+                                    }
+                                    else {
+                                        this._unexpected();
+                                    }
+                                    if (whitespace && !parsed) {
+                                        if (this._match('NDATA')) {
+                                            this._whitespace(1);
+                                            const name = this._name();
+                                            this._assert(name !== null);
+                                            node.notationName = name;
+                                            this._whitespace(0);
+                                        }
                                     }
                                 }
                                 this._expect('>');
@@ -181,9 +213,7 @@ xml.TextReader = class {
                             const position = this._position;
                             const name = this._name();
                             this._assert(name !== null);
-                            while (this._char === '\n' || this._char === '\r') {
-                                this._next();
-                            }
+                            this._whitespace(0);
                             if (!this._match('>')) {
                                 this._unexpected();
                             }
@@ -206,6 +236,7 @@ xml.TextReader = class {
                                     if (!whitespace) {
                                         this._unexpected();
                                     }
+                                    const position = this._position;
                                     const name = this._name();
                                     if (name) {
                                         this._whitespace(0);
@@ -213,6 +244,7 @@ xml.TextReader = class {
                                         this._whitespace(0);
                                         const value = this._attValue();
                                         attributes.push({
+                                            position: position,
                                             qualifiedName: name,
                                             value: value
                                         });
@@ -226,21 +258,22 @@ xml.TextReader = class {
                             }
                             const namespaces = new Map();
                             for (let i = attributes.length - 1; i >= 0; i--) {
-                                const attribute = attributes[i];
-                                const name = attribute.qualifiedName;
+                                const attr = attributes[i];
+                                const name = attr.qualifiedName;
                                 const index = name.indexOf(':');
                                 if (index > 0) {
-                                    attribute.prefix = name.substring(0, index);
-                                    attribute.localName = name.substring(index + 1);
-                                    if (attribute.prefix === 'xmlns' && attribute.localName) {
-                                        namespaces.set(attribute.localName, attribute.value);
+                                    attr.prefix = name.substring(0, index);
+                                    attr.localName = name.substring(index + 1);
+                                    if (attr.prefix === 'xmlns' && attr.localName) {
+                                        this._assert(attr.localName !== 'xmlns', "Invalid namespace prefix '" + attr.localName + "'", attr.position);
+                                        namespaces.set(attr.localName, attr.value);
                                     }
                                 }
                                 else {
-                                    attribute.prefix = null;
-                                    attribute.localName = name;
-                                    if (attribute.localName === 'xmlns') {
-                                        namespaces.set('', attribute.value);
+                                    attr.prefix = null;
+                                    attr.localName = name;
+                                    if (attr.localName === 'xmlns') {
+                                        namespaces.set('', attr.value);
                                     }
                                 }
                             }
@@ -301,6 +334,9 @@ xml.TextReader = class {
                                     this._appendChild(node);
                                 }
                                 else if (this._char === ']' && this._match(']]>')) {
+                                    this._unexpected();
+                                }
+                                else if (this._char === '\x07' || this._char === '\x0c' || this._char === '\x1b') {
                                     this._unexpected();
                                 }
                                 else {
@@ -392,7 +428,7 @@ xml.TextReader = class {
     _whitespace(count) {
         const position = this._position;
         let index = 0;
-        while (this._char === ' ' || this._char === '\n' || this._char === '\r' || this._char === '\t') {
+        while (this._char === ' ' || this._char === '\n' || this._char === '\r' || this._char === '\t' || (this._version === 1 && this._char === '\x85')) {
             index++;
             this._next();
         }
@@ -403,8 +439,14 @@ xml.TextReader = class {
         return index > 0;
     }
 
-    _assert(value) {
+    _assert(value, message, position) {
         if (value == false || value === undefined || value === null) {
+            if (message) {
+                if (position) {
+                    this._seek(position);
+                }
+                throw new xml.Error(message + this._location());
+            }
             this._unexpected();
         }
     }
@@ -432,6 +474,7 @@ xml.TextReader = class {
         if (!this._match(value)) {
             this._unexpected();
         }
+        return true;
     }
 
     _name() {
@@ -458,6 +501,34 @@ xml.TextReader = class {
         }
         this._seek(position);
         return null;
+    }
+
+    _entityValue() {
+        const quote = this._char;
+        if (quote !== '"' && quote !== "'") {
+            this._unexpected();
+        }
+        this._next();
+        const data = [];
+        while (this._char !== quote) {
+            if (this._char === '&' || this._char === '%') {
+                const char = this._char;
+                const reference = this._reference();
+                if (!reference) {
+                    this._unexpected();
+                }
+                data.push(char + reference + ';');
+            }
+            else {
+                data.push(this._char);
+                this._next();
+            }
+            if (this._char === undefined) {
+                this._unexpected();
+            }
+        }
+        this._next();
+        return data.join('');
     }
 
     _attValue() {
@@ -533,11 +604,15 @@ xml.TextReader = class {
     _terminal(terminal) {
         const data = [];
         while (!this._match(terminal)) {
-            data.push(this._char);
-            this._next();
             if (this._char === undefined) {
                 this._unexpected();
             }
+            const c = this._char.charCodeAt(0);
+            if (c !== 0x09 && c !== 0x0A && c !== 0x0D && (c < 0x20 || c > 0xD7FF) && (c < 0xE000 || c > 0xFFFD) && (c < 0x10000 || c > 0x10FFFF)) {
+                this._unexpected();
+            }
+            data.push(this._char);
+            this._next();
         }
         return data.join('');
     }
@@ -556,7 +631,9 @@ xml.TextReader = class {
                     }
                 }
                 if (data.length > 0 && this._match(';')) {
-                    return data.join('');
+                    const value = data.join('');
+                    this._assert(parseInt(value, 16) <= 0x10FFFF, "Invalid value '&#x" + value + ";'", position);
+                    return value;
                 }
             }
             else if (this._match('#')) {
@@ -569,7 +646,9 @@ xml.TextReader = class {
                     }
                 }
                 if (data.length > 0 && this._match(';')) {
-                    return data.join('');
+                    const value = data.join('');
+                    this._assert(parseInt(value, 10) <= 0x10FFFF, "Invalid value '&#" + value + ";'", position);
+                    return value;
                 }
             }
             else {
@@ -1009,10 +1088,6 @@ xml.Document = class extends xml.Node {
         return new xml.CDataSection(this, data);
     }
 
-    createEntity(name) {
-        return new xml.Entity(this, name);
-    }
-
     createEntityReference(name) {
         return new xml.EntityReference(this, name);
     }
@@ -1060,6 +1135,10 @@ xml.DocumentType = class extends xml.Node {
         if (newChild.nodeType === xml.NodeType.Entity) {
             this._entities.setNamedItem(newChild);
         }
+    }
+
+    createEntity(name) {
+        return new xml.Entity(this.ownerDocument, name);
     }
 };
 
