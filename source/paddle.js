@@ -20,6 +20,12 @@ paddle.ModelFactory = class {
                 return 'paddle.pbtxt';
             }
         }
+        if (extension === 'json') {
+            const obj = context.open('json');
+            if (obj && obj.ops && Array.isArray(obj.ops) && obj.vars) {
+                return 'paddle.json';
+            }
+        }
         const stream = context.stream;
         if (stream.length > 16 && stream.peek(16).every((value) => value === 0x00)) {
             return 'paddle.params';
@@ -41,6 +47,117 @@ paddle.ModelFactory = class {
                         paddle.schema = flatbuffers.get('paddlelite').paddle.lite.fbs.proto;
                         const file = paddle.NaiveBuffer.open(context);
                         return new paddle.Model(metadata, file.format, file.model, file.weights);
+                    });
+                }
+                case 'paddle.json': {
+                    return context.require('./paddle-proto').then(() => {
+                        paddle.proto = protobuf.get('paddle').paddle.framework.proto;
+                        const createJsProgram = () => {
+                            const program = {};
+                            program.format = 'PaddlePaddle';
+                            const block = context.open('json');
+                            block.vars = Object.values(block.vars);
+                            block.idx = 0;
+
+                            const variables = new Set();
+                            // format vars
+                            for (const variable of block.vars) {
+                                if (variable.persistable) {
+                                    variables.add(variable.name);
+                                }
+                                const dims = variable.shape.map(item => {
+                                    return new protobuf.Int64(item, item >=0 ? 0 : -1);
+                                });
+                                variable.type = {
+                                    type: 7,
+                                    lod_tensor: {
+                                        lod_level: 0,
+                                        tensor: {
+                                            data_type: 5,
+                                            dims
+                                        }
+                                    }
+                                };
+                                variable.attrs = [];
+                            }
+
+                            // format inputs 、outputs 、attrs
+                            for (const op of block.ops) {
+                                // mock paddle input 0
+                                if (op.type === 'feed' || op.type === 'fetch') {
+                                    op.attrs['col'] = 0;
+                                }
+                                const inputs = [];
+                                Object.keys(op.inputs).forEach(key => {
+                                    inputs.push({
+                                        parameter: key,
+                                        arguments: op.inputs[key]
+                                    })
+                                });
+                                op.inputs = inputs;
+                                const outputs = [];
+                                Object.keys(op.outputs).forEach(key => {
+                                    outputs.push({
+                                        parameter: key,
+                                        arguments: op.outputs[key]
+                                    });
+                                });
+                                op.outputs = outputs;
+
+                                const attrs = [];
+                                Object.keys(op.attrs).forEach(key => {
+                                    const value = op.attrs[key];
+                                    const type = Array.isArray(value)
+                                        ? 'arrayType'
+                                        : Number.isInteger(value)
+                                            ? 'intType'
+                                            : typeof value;
+                                    let formatType = '';
+                                    switch(type) {
+                                        case 'arrayType':
+                                            const sample = value[0];
+                                            if (Number.isInteger(sample)) {
+                                                formatType = 'ints'; // INTS
+                                            }
+                                            else if (typeof sample === 'number') {
+                                                formatType = 'floats';
+                                            }
+                                            else if (typeof sample === 'string') {
+                                                formatType = 'strings';
+                                            }
+                                            else if (typeof sample === 'boolean') {
+                                                formatType = 'booleans';
+                                            }
+                                            break;
+                                        case 'intType':
+                                            formatType = 'int';
+                                            break;
+                                        default:
+                                            formatType = type; // string boolean number
+
+                                    }
+                                    const formatTypeInfo = paddle.JsAttributeType[formatType];
+                                    if (formatTypeInfo) {
+                                        attrs.push({
+                                            type: formatTypeInfo.code,
+                                            name: key,
+                                            [formatTypeInfo.value]: value
+                                        });
+                                    }
+                                });
+                                op.attrs = attrs;
+                            }
+
+                            program.desc = {
+                                blocks: [block]
+                            };
+                            program.vars = Array.from(variables).sort();
+                            return program;
+                        };
+
+                        const program = createJsProgram(context.stream, match);
+                        return new paddle.Model(metadata, program.format, program.desc, new Map());
+
                     });
                 }
                 default: {
@@ -1044,6 +1161,40 @@ paddle.AttributeType = {
     FLOAT64S: 12
 };
 
+paddle.JsAttributeType = {
+    'int': {
+        code: 0,
+        value: 'i'
+    },
+    'number': {
+        code: 1,
+        value: 'f'
+    },
+    'string': {
+        code: 2,
+        value: 's'
+    },
+    'ints': {
+        code: 3,
+        value: 'ints'
+    },
+    'floats': {
+        code: 4,
+        value: 'floats'
+    },
+    'strings': {
+        code: 5,
+        value: 'strings'
+    },
+    'boolean': {
+        code: 6,
+        value: 'b'
+    },
+    'booleans': {
+        code: 7,
+        value: 'bools'
+    }
+};
 paddle.Metadata = class {
 
     static open(context) {
