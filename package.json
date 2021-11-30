@@ -6,7 +6,7 @@
         "email": "lutzroeder@users.noreply.github.com",
         "url": "https://www.lutzroeder.com"
     },
-    "version": "5.3.7",
+    "version": "5.4.0",
     "description": "Visualizer for neural network, deep learning, and machine learning models",
     "license": "MIT",
     "repository": "lutzroeder/netron",
@@ -18,19 +18,13 @@
         "build": "webpack --config webpack.prod.js"
     },
     "dependencies": {
-        "electron-updater": "4.3.9"
+        "electron-updater": "4.6.1"
     },
     "devDependencies": {
-        "electron": "15.3.1",
-        "electron-builder": "22.13.1",
+        "electron": "16.0.2",
+        "electron-builder": "22.14.5",
         "electron-notarize": "1.1.1",
-        "eslint": "8.2.0",
-        "@babel/core": "^7.16.0",
-        "babel-loader": "^8.2.3",
-        "copy-webpack-plugin": "^9.1.0",
-        "html-webpack-plugin": "^5.5.0",
-        "webpack": "^5.64.0",
-        "webpack-cli": "^4.9.1"
+        "eslint": "8.3.0"
     },
     "eslintConfig": {
         "env": {
@@ -60,6 +54,7 @@
             ],
             "linebreak-style": "off",
             "no-trailing-spaces": "error",
+            "no-console": "error",
             "prefer-const": [
                 "error",
                 {

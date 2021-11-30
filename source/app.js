@@ -1,4 +1,3 @@
-/* jshint esversion: 6 */
 
 const electron = require('electron');
 const updater = require('electron-updater');
@@ -290,7 +289,9 @@ class Application {
         const promise = autoUpdater.checkForUpdates();
         if (promise) {
             promise.catch((error) => {
+                /* eslint-disable */
                 console.log(error.message);
+                /* eslint-enable */
             });
         }
     }

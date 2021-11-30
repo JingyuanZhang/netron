@@ -1,4 +1,3 @@
-/* jshint esversion: 6 */
 
 // Experimental Python parser
 
@@ -2010,6 +2009,11 @@ python.Execution = class {
         this.registerType('numpy.ma.core.MaskedArray', class extends numpy.ndarray {
             constructor(data /*, mask, dtype, copy, subok, ndmin, fill_value, keep_mask, hard_mask, shrink, order */) {
                 super(data.shape, data.dtype, data.data);
+            }
+        });
+        this.registerType('numpy.core.memmap.memmap', class extends numpy.ndarray {
+            constructor(shape, dtype) {
+                super(shape, dtype);
             }
         });
         this.registerType('pathlib.PosixPath', class {

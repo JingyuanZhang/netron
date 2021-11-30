@@ -1,4 +1,3 @@
-/* jshint esversion: 6 */
 
 // Experimental
 
@@ -969,6 +968,7 @@ pytorch.Execution = class extends python.Execution {
         this.registerType('torch.distributions.transforms.LowerCholeskyTransform', class {});
         this.registerType('torch.nn.backends.thnn._get_thnn_function_backend', class {});
         this.registerType('torch.nn.intrinsic.modules.fused.ConvReLU2d', class {});
+        this.registerType('torch.nn.intrinsic.qat.modules.conv_fused.ConvBnReLU2d', class {});
         this.registerType('torch.nn.intrinsic.qat.modules.conv_fused.ConvReLU2d', class {});
         this.registerType('torch.nn.intrinsic.quantized.modules.conv_relu.ConvReLU2d', class {});
         this.registerType('torch.nn.intrinsic.quantized.modules.linear_relu.LinearReLU', class {});
@@ -1092,6 +1092,7 @@ pytorch.Execution = class extends python.Execution {
         this.registerType('torch.nn.parallel.distributed._DDPUnevenInputsConfig', class {});
         this.registerType('torch.nn.parallel.distributed.DistributedDataParallel', class {});
         this.registerType('torch.nn.qat.modules.conv.Conv2d', class {});
+        this.registerType('torch.nn.qat.modules.linear.Linear', class {});
         this.registerType('torch.nn.quantized.modules.activation.ReLU', class {});
         this.registerType('torch.nn.quantized.dynamic.modules.linear.Linear', class {});
         this.registerType('torch.nn.quantized.modules.activation.ReLU6', class {});
@@ -1128,7 +1129,9 @@ pytorch.Execution = class extends python.Execution {
         this.registerType('torch.quantization.fake_quantize.FakeQuantize', class {});
         this.registerType('torch.quantization.observer._PartialWrapper', class {});
         this.registerType('torch.quantization.observer.MinMaxObserver', class {});
-        this.registerType('torch.quantization.QConfig.QConfig', class {});
+        this.registerType('torch.quantization.observer.MovingAverageMinMaxObserver', class {});
+        this.registerType('torch.quantization.observer.MovingAveragePerChannelMinMaxObserver', class {});
+        this.registerType('torch.quantization.qconfig.QConfig', class {});
         this.registerType('torch.quantization.stubs.DeQuantStub', class {});
         this.registerType('torch.quantization.stubs.QuantStub', class {});
         this.registerType('torch.utils.data.dataloader._MultiProcessingDataLoaderIter', class {});
@@ -1236,10 +1239,14 @@ pytorch.Execution = class extends python.Execution {
         this.registerType('torchvision.ops.poolers.MultiScaleRoIAlign', class {});
         this.registerType('torchvision.transforms.functional.InterpolationMode', class {});
         this.registerType('torchvision.transforms.transforms.Compose', class {});
+        this.registerType('torchvision.transforms.transforms.CenterCrop', class {});
         this.registerType('torchvision.transforms.transforms.Grayscale', class {});
         this.registerType('torchvision.transforms.transforms.Normalize', class {});
         this.registerType('torchvision.transforms.transforms.RandomAffine', class {});
+        this.registerType('torchvision.transforms.transforms.RandomCrop', class {});
+        this.registerType('torchvision.transforms.transforms.RandomHorizontalFlip', class {});
         this.registerType('torchvision.transforms.transforms.Resize', class {});
+        this.registerType('torchvision.transforms.transforms.Scale', class {});
         this.registerType('torchvision.transforms.transforms.ToPILImage', class {});
         this.registerType('torchvision.transforms.transforms.ToTensor', class {});
         this.registerFunction('annotate', function(type, value) {
@@ -1304,6 +1311,9 @@ pytorch.Execution = class extends python.Execution {
         });
         this.registerFunction('ops.prim.dtype', function(tensor) {
             return tensor.dtype.scalar_type();
+        });
+        this.registerFunction('ops.prim.is_quantized', function(tensor) {
+            return tensor && tensor.__quantized__ === true;
         });
         this.registerFunction('ops.prim.unchecked_unwrap_optional', function(value) {
             return value;
@@ -2861,19 +2871,18 @@ pytorch.Container.Zip.Execution = class extends pytorch.Execution {
                         const parameter = parameters.shift();
                         const argument = copyEvalArgs[0];
 
-                        switch (parameter.type) {
-                            case 'Tensor': {
-                                if (Array.isArray(argument) || (!pytorch.Utility.isTensor(argument) && argument !== null && argument !== undefined)) {
-                                    if (parameter.optional) {
-                                        if (argument === undefined) {
-                                            copyArgs.shift();
-                                            copyEvalArgs.shift();
-                                        }
-                                        continue;
+                        if (parameter.type === 'Tensor' || (parameter.type === 'Scalar' && pytorch.Utility.isTensor(argument))) {
+                            if (Array.isArray(argument) || (!pytorch.Utility.isTensor(argument) && argument !== null && argument !== undefined)) {
+                                if (parameter.optional) {
+                                    if (argument === undefined) {
+                                        copyArgs.shift();
+                                        copyEvalArgs.shift();
                                     }
-                                    next = true;
-                                    break;
+                                    continue;
                                 }
+                                next = true;
+                            }
+                            else {
                                 copyArgs.shift();
                                 copyEvalArgs.shift();
                                 const item = (argument === null || argument === undefined) ? {} : argument;
@@ -2882,17 +2891,17 @@ pytorch.Container.Zip.Execution = class extends pytorch.Execution {
                                 inputs.push({ id: item.__variable__ });
                                 referencedParameters.push(item);
                                 node.inputs.push(inputs);
-                                break;
                             }
-                            case 'Tensor[]': {
-                                const argument = copyEvalArgs[0];
-                                if (!Array.isArray(argument) || !argument.every((item) => pytorch.Utility.isTensor(item) || item === null)) {
-                                    if (parameter.optional) {
-                                        continue;
-                                    }
-                                    next = true;
-                                    break;
+                        }
+                        else if (parameter.type === 'Tensor[]') {
+                            const argument = copyEvalArgs[0];
+                            if (!Array.isArray(argument) || !argument.every((item) => pytorch.Utility.isTensor(item) || item === null)) {
+                                if (parameter.optional) {
+                                    continue;
                                 }
+                                next = true;
+                            }
+                            else {
                                 copyArgs.shift();
                                 copyEvalArgs.shift();
                                 const inputs = [];
@@ -2905,26 +2914,23 @@ pytorch.Container.Zip.Execution = class extends pytorch.Execution {
                                     referencedParameters.push(item);
                                 }
                                 node.inputs.push(inputs);
-                                break;
                             }
-                            default: {
-                                const arg = copyArgs[0];
-                                if (!pytorch.Utility.isType(argument, parameter.type) && argument !== null) {
-                                    if (parameter.optional) {
-                                        continue;
-                                    }
-                                    next = true;
-                                    break;
+                        }
+                        else {
+                            const arg = copyArgs[0];
+                            if (!pytorch.Utility.isType(argument, parameter.type) && argument !== null) {
+                                if (parameter.optional) {
+                                    continue;
                                 }
-                                if (arg.type !== '=') {
-                                    copyArgs.shift();
-                                    copyEvalArgs.shift();
-                                    node.attributes.push({ name: parameter.name, value: argument });
-                                }
-                                else {
-                                    throw new pytorch.Error('Expected named argument.');
-                                }
-                                break;
+                                next = true;
+                            }
+                            else if (arg.type !== '=') {
+                                copyArgs.shift();
+                                copyEvalArgs.shift();
+                                node.attributes.push({ name: parameter.name, value: argument });
+                            }
+                            else {
+                                throw new pytorch.Error('Expected named argument.');
                             }
                         }
                         if (next) {
@@ -3052,8 +3058,10 @@ pytorch.Container.Zip.Execution = class extends pytorch.Execution {
                                         case 'ops.quantized.linear':
                                         case 'ops.quantized.conv2d':
                                         case 'ops.quantized.conv2d_relu':
+                                        case 'ops.quantized.add':
                                         case 'ops.quantized.add_relu':
                                             parameter.resize_([ NaN, NaN, NaN, NaN ]);
+                                            parameter.__quantized__ = true;
                                             break;
                                         case 'torch.contiguous':
                                             parameter.__source__ = this.expression(args[0], context);
@@ -3146,7 +3154,6 @@ pytorch.Container.Zip.Execution = class extends pytorch.Execution {
                         const size = tensor.size();
                         if (number >= 3 && number <= 5) {
                             if (!Array.isArray(size) || size.length !== number) {
-                                console.log(JSON.stringify(size) + ' ' + number);
                                 tensor.resize_(Array(number).fill(NaN));
                             }
                         }
@@ -3566,7 +3573,6 @@ pytorch.Utility = class {
                 return obj;
             }
             if (obj && Object(obj) === obj) {
-                const integer = new Set([ 'epoch', 'i_batch', 'num_vid', 'seen' ]);
                 const target = {};
                 for (const entry of Object.entries(obj)) {
                     const key = entry[0];
@@ -3576,19 +3582,18 @@ pytorch.Utility = class {
                             continue;
                         }
                     }
-                    if (key.indexOf('loss') !== -1 && Array.isArray(value)) {
+                    if (typeof value === 'number') {
                         continue;
                     }
-                    if (key.startsWith('dico_') && Object(value) === value) {
+                    if (Array.isArray(value) && (key.indexOf('loss') !== -1 || value.length === 0)) {
                         continue;
                     }
-                    if (key.startsWith('params') && Object(value) === value && (value.id2lang || value.lang2id)) {
+                    if (value && value.__class__ && value.__class__.__module__ === 'datetime' && value.__class__.__name__ === 'datetime') {
                         continue;
                     }
-                    if (key.startsWith('spk_dict_') && Object(value) === value && Object.keys(value).length === 0) {
-                        continue;
-                    }
-                    if (integer.has(key) && Number.isInteger(value)) {
+                    if ((key.startsWith('dico_') && Object(value) === value) ||
+                        (key.startsWith('params') && Object(value) === value && (value.id2lang || value.lang2id)) ||
+                        (key.startsWith('spk_dict_') && Object(value) === value && Object.keys(value).length === 0)) {
                         continue;
                     }
                     target[key] = value;

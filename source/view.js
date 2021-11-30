@@ -1,4 +1,3 @@
-/* jshint esversion: 6 */
 
 var view = view || {};
 
@@ -792,6 +791,7 @@ view.View = class {
             const exportElement = graphElement.cloneNode(true);
             this.applyStyleSheet(exportElement, 'view-grapher.css');
             exportElement.setAttribute('id', 'export');
+            exportElement.removeAttribute('viewBox');
             exportElement.removeAttribute('width');
             exportElement.removeAttribute('height');
             exportElement.style.removeProperty('opacity');
@@ -1430,12 +1430,14 @@ view.ModelContext = class {
                             }
                             case 'xml': {
                                 const reader = xml.TextReader.open(stream);
-                                const document = reader.peek();
-                                const element = document.documentElement;
-                                const namespaceURI = element.namespaceURI;
-                                const localName = element.localName;
-                                const name = namespaceURI ? namespaceURI + ':' + localName : localName;
-                                tags.set(name, element);
+                                if (reader) {
+                                    const document = reader.peek();
+                                    const element = document.documentElement;
+                                    const namespaceURI = element.namespaceURI;
+                                    const localName = element.localName;
+                                    const name = namespaceURI ? namespaceURI + ':' + localName : localName;
+                                    tags.set(name, element);
+                                }
                                 break;
                             }
                         }
@@ -1518,8 +1520,8 @@ view.ModelFactoryService = class {
     constructor(host) {
         this._host = host;
         this._extensions = [];
-        this.register('./pytorch', [ '.pt', '.pth', '.ptl', '.pt1', '.pyt', '.pyth', '.pkl', '.pickle', '.h5', '.t7', '.model', '.dms', '.tar', '.ckpt', '.chkpt', '.tckpt', '.bin', '.pb', '.zip', '.nn', '.torchmodel', '.torchscript', '.ot', '.params' ]);
-        this.register('./onnx', [ '.onnx', '.onn', '.pb', '.pbtxt', '.prototxt', '.model', '.pt', '.pth', '.pkl', '.ort', '.ort.onnx' ]);
+        this.register('./pytorch', [ '.pt', '.pth', '.ptl', '.pt1', '.pyt', '.pyth', '.pkl', '.pickle', '.h5', '.t7', '.model', '.dms', '.tar', '.ckpt', '.chkpt', '.tckpt', '.bin', '.pb', '.zip', '.nn', '.torchmodel', '.torchscript', '.pytorch', '.ot', '.params' ]);
+        this.register('./onnx', [ '.onnx', '.onn', '.pb', '.pbtxt', '.prototxt', '.txt', '.model', '.pt', '.pth', '.pkl', '.ort', '.ort.onnx' ]);
         this.register('./mxnet', [ '.json', '.params' ]);
         this.register('./coreml', [ '.mlmodel', '.bin', 'manifest.json', 'metadata.json', 'featuredescriptions.json', '.pb' ]);
         this.register('./caffe', [ '.caffemodel', '.pbtxt', '.prototxt', '.pt', '.txt' ]);
@@ -1531,7 +1533,7 @@ view.ModelFactoryService = class {
         this.register('./mediapipe', [ '.pbtxt' ]);
         this.register('./uff', [ '.uff', '.pb', '.pbtxt', '.uff.txt', '.trt', '.engine' ]);
         this.register('./tensorrt', [ '.trt', '.engine', '.model', '.txt', '.uff', '.pb', '.tmfile', '.onnx', '.pth', '.dnn' ]);
-        this.register('./npz', [ '.npz', '.npy', '.pkl' ]);
+        this.register('./npz', [ '.npz', '.npy', '.pkl', '.pickle' ]);
         this.register('./lasagne', [ '.pkl', '.pickle', '.joblib', '.model', '.pkl.z', '.joblib.z' ]);
         this.register('./lightgbm', [ '.txt', '.pkl', '.model' ]);
         this.register('./keras', [ '.h5', '.hd5', '.hdf5', '.keras', '.json', '.cfg', '.model', '.pb', '.pth', '.weights', '.pkl', '.lite', '.tflite', '.ckpt' ]);

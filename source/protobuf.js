@@ -1,6 +1,4 @@
 
-/* jshint esversion: 6 */
-
 var protobuf = protobuf || {};
 var base = base || require('./base');
 var text = text || require('./text');
@@ -1066,7 +1064,7 @@ protobuf.TextReader = class {
                     do {
                         c = this._decoder.decode();
                         if (c === undefined) {
-                            this._token === undefined;
+                            this._token = undefined;
                             return;
                         }
                     }

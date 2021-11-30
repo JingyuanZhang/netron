@@ -167,8 +167,8 @@
   },
   {
     "type":   "armnn",
-    "target": "ssd_mobilenet_v3_small_coco_2019_08_14.armnn",
-    "source": "https://raw.githubusercontent.com/ARM-software/armnn/master/samples/serialized/ssd_mobilenet_v3_small_coco_2019_08_14.armnn",
+    "target": "ssd_mobilenet_v1.armnn",
+    "source": "https://raw.githubusercontent.com/ARM-software/armnn/master/samples/serialized/ssd_mobilenet_v1.armnn",
     "format": "Arm NN",
     "link":   "https://github.com/ARM-software/armnn"
   },
@@ -3345,6 +3345,13 @@
   },
   {
     "type":   "onnx",
+    "target": "netron_issue_845.onnx",
+    "source": "https://github.com/lutzroeder/netron/files/7604948/netron_issue_845.onnx.zip[netron_issue_845.onnx]",
+    "format": "ONNX v4",
+    "link":   "https://github.com/lutzroeder/netron/issues/188"
+  },
+  {
+    "type":   "onnx",
     "target": "optional_1.onnx",
     "source": "https://raw.githubusercontent.com/microsoft/onnxruntime/master/onnxruntime/test/testdata/optional_1.onnx",
     "format": "ONNX v3",
@@ -4667,13 +4674,6 @@
   },
   {
     "type":   "pytorch",
-    "target": "resnet18-5c106cde.pth",
-    "source": "https://download.pytorch.org/models/resnet18-5c106cde.pth",
-    "format": "PyTorch v0.1.1",
-    "link":   "https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py"
-  },
-  {
-    "type":   "pytorch",
     "target": "resnet18_fbgemm_16fa66dd.pth",
     "source": "https://download.pytorch.org/models/quantized/resnet18_fbgemm_16fa66dd.pth",
     "format": "PyTorch v0.1.10",
@@ -4685,6 +4685,20 @@
     "source": "https://raw.githubusercontent.com/facebookresearch/kill-the-bits/master/src/models/compressed/resnet18_large_blocks.pth",
     "format": "PyTorch v0.1.10",
     "link":   "https://github.com/facebookresearch/kill-the-bits/tree/master/src/models/compressed"
+  },
+  {
+    "type":   "pytorch",
+    "target": "resnet18_quantized_cifar10.pt.zip",
+    "source": "https://github.com/lutzroeder/netron/files/7610907/resnet18_quantized_cifar10.pt.zip[resnet18_quantized_cifar10.pt]",
+    "format": "TorchScript v1.6",
+    "link":   "https://github.com/lutzroeder/netron/issues/842"
+  },
+  {
+    "type":   "pytorch",
+    "target": "resnet18-5c106cde.pth",
+    "source": "https://download.pytorch.org/models/resnet18-5c106cde.pth",
+    "format": "PyTorch v0.1.1",
+    "link":   "https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py"
   },
   {
     "type":   "pytorch",

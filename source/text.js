@@ -1,4 +1,3 @@
-/* jshint esversion: 6 */
 
 var text = text || {};
 
@@ -69,9 +68,13 @@ text.Decoder = class {
 text.Decoder.String = class {
 
     constructor(buffer) {
-        this.buffer = buffer;
+        this.buffer = buffer ? buffer.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\uD800-\uDFFF]/g) : [];
         this.position = 0;
-        this.length = buffer.length;
+        this.length = this.buffer.length;
+    }
+
+    get encoding() {
+        return null;
     }
 
     get encoding() {
@@ -129,12 +132,14 @@ text.Decoder.Utf8 = class {
         if (c >= 0xF0 && c <= 0xF4) {
             if (this.buffer[this.position + 2] !== undefined) {
                 const c2 = this.buffer[this.position];
-                if ((c !== 0xF0 || c2 >= 0x90) && (c !== 0xF4 || c2 <= 0x8f)) {
+                if (c2 >= 0x80 && c2 <= 0xBF) {
                     const c3 = this.buffer[this.position + 1];
-                    if (c3 >= 0x80 && c3 < 0xFB) {
+                    if (c3 >= 0x80 && c3 <= 0xBF) {
                         const c4 = this.buffer[this.position + 2];
-                        this.position += 3;
-                        return String.fromCodePoint(((c & 0x07) << 18) | ((c2 & 0x3F) << 12) | ((c3 & 0x3F) << 6) | (c4 & 0x3F));
+                        if (c4 >= 0x80 && c4 <= 0xBF) {
+                            this.position += 3;
+                            return String.fromCodePoint(((c & 0x07) << 18) | ((c2 & 0x3F) << 12) | ((c3 & 0x3F) << 6) | (c4 & 0x3F));
+                        }
                     }
                 }
             }
