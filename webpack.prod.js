@@ -1,8 +1,12 @@
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
+const { CleanWebpackPlugin } = require('clean-webpack-plugin');
+const less = require('less');
+const fs = require('fs');
 
-const topLevelDeps = ['dagre', 'base', 'index', 'text', 'json', 'python', 'protobuf',
-    'flatbuffers', 'zip', 'gzip', 'tar', 'view-grapher', 'view-sidebar', 'view', 'index'];
+
+// const topLevelDeps = ['dagre', 'base', 'index', 'text', 'json', 'python', 'protobuf',
+//     'flatbuffers', 'zip', 'gzip', 'tar', 'view-grapher', 'view-sidebar', 'view', 'index'];
 
 module.exports = {
     mode: 'production',
@@ -30,23 +34,24 @@ module.exports = {
         ]
     },
     plugins: [
+        new CleanWebpackPlugin(),
         new CopyPlugin({
             patterns: [
                 {
-                    from: "source/**/*",
-                    to: "./[name][ext]",
-                    filter: async resourcePath => {
-                        const pathArr = resourcePath.split('/');
-                        const filename = pathArr[pathArr.length - 1];
-                        if (filename.endsWith('.js') || filename.endsWith('.py') || filename.endsWith('.json')) {
-                            return false;
-                        }
-                        return [...topLevelDeps.map(dep => `${dep}.js`), 'index.html']
-                            .filter(name => name === filename).length === 0;
+                    from: 'build/css/index.less',
+                    to: './[name].css',
+                    transform() {
+                        const src = 'build/css/index.less';
+                        // 调用less.render()将Less代码编译为css代码
+                        return less.render(fs.readFileSync(src).toString(), {
+                            filename: path.resolve(src), // <- here we go
+                        }).then(output => {
+                            return output.css;
+                        });
                     }
                 }
-            ],
-        }),
+            ]
+        })
     ],
     output: {
         filename: '[name].js',

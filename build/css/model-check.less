@@ -1,0 +1,41 @@
+.model-check {
+    display: none;
+}
+.checking {
+    .model-check {
+        display: flex;
+        flex-direction: column;
+        top: 50%;
+        left: 50%;
+        width: 50%;
+        height: 30%;
+        transform: translate(-50%, -50%);
+        background-color: #ececec;
+        border-radius: 5px;
+        border: 0.5px solid #cccccc;
+        box-shadow: 0 0 30px #ddd;
+        text-align: center;
+        align-items: center;
+        justify-content: center;
+
+        div {
+            max-width: 80%;
+            overflow: hidden;
+            overflow-wrap: break-word;
+            font-size: 12px;
+            margin: 2px 0;
+
+            span {
+                display: inline-block;
+                padding: 2px 6px;
+            }
+        }
+        .support-title {
+            font-size: 20px;
+        }
+    }
+}
+@media all and (max-width: 640px) {
+
+    .welcome .logo { border: 2px red solid;}
+}
